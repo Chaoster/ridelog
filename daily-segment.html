@@ -137,18 +137,21 @@
       document.getElementById('date-input').value = existingSeg.date || '';
       document.getElementById('note-input').value = existingSeg.note || '';
 
-      // Prefill photos
-      if (existingSeg.photoUrls && existingSeg.photoUrls.length > 0) {
+      // Prefill photos — prefer stored photos with GPS data
+      const photoList = (existingSeg.photos && existingSeg.photos.length > 0)
+        ? existingSeg.photos
+        : (existingSeg.photoUrls || []).map(url => ({ url, lat: 0, lng: 0, name: 'photo' }));
+      if (photoList.length > 0) {
         const grid = document.getElementById('photo-grid');
         const addBtn = grid.querySelector('.photo-add');
-        existingSeg.photoUrls.forEach((url, i) => {
-          photos.push({ url, lat: 0, lng: 0, name: 'photo' });
+        photoList.forEach((p, i) => {
+          photos.push({ url: p.url, lat: p.lat || 0, lng: p.lng || 0, name: p.name || 'photo' });
           const div = document.createElement('div');
           div.className = 'photo-item';
           div.dataset.idx = i;
           div.style.position = 'relative';
           div.innerHTML = `
-            <img src="${url}" data-fullscreen="${url}">
+            <img src="${p.url}" data-fullscreen="${p.url}">
             <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:white;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;z-index:2;" onclick="removePhoto(this)">×</div>
           `;
           grid.insertBefore(div, addBtn);
@@ -232,49 +235,57 @@
       if (photos.length === 0) return;
       clearPhotoMarkers();
 
-      const minPx = pinSize * 1.5;
-
-      function isTooClose(lat, lng) {
-        const pt = map.latLngToContainerPoint([lat, lng]);
-        for (const m of photoMarkers) {
-          const mPt = map.latLngToContainerPoint(m.getLatLng());
-          const dx = pt.x - mPt.x, dy = pt.y - mPt.y;
-          if (Math.sqrt(dx * dx + dy * dy) < minPx) return true;
+      // Photos with real GPS: display at exact position, do NOT snap to route
+      photos.forEach(p => {
+        if (p.lat !== 0 || p.lng !== 0) {
+          addPhotoMarker(p);
         }
-        return false;
-      }
+      });
 
-      function findOnRoute(baseIdx) {
-        if (!isTooClose(gpxPoints[baseIdx][0], gpxPoints[baseIdx][1])) {
-          return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
-        }
-        for (let step = 1; step < gpxPoints.length; step++) {
-          for (const dir of [-1, 1]) {
-            const idx = baseIdx + dir * step;
-            if (idx >= 0 && idx < gpxPoints.length) {
-              const lat = gpxPoints[idx][0], lng = gpxPoints[idx][1];
-              if (!isTooClose(lat, lng)) return [lat, lng];
+      // Photos without GPS: fallback — distribute along route
+      const noGpsPhotos = photos.filter(p => p.lat === 0 && p.lng === 0);
+      if (noGpsPhotos.length > 0) {
+        if (gpxPoints.length > 0) {
+          const minPx = pinSize * 1.5;
+          function isTooClose(lat, lng) {
+            const pt = map.latLngToContainerPoint([lat, lng]);
+            for (const m of photoMarkers) {
+              const mPt = map.latLngToContainerPoint(m.getLatLng());
+              const dx = pt.x - mPt.x, dy = pt.y - mPt.y;
+              if (Math.sqrt(dx * dx + dy * dy) < minPx) return true;
             }
+            return false;
           }
+          function findOnRoute(baseIdx) {
+            if (!isTooClose(gpxPoints[baseIdx][0], gpxPoints[baseIdx][1])) {
+              return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
+            }
+            for (let step = 1; step < gpxPoints.length; step++) {
+              for (const dir of [-1, 1]) {
+                const idx = baseIdx + dir * step;
+                if (idx >= 0 && idx < gpxPoints.length) {
+                  const lat = gpxPoints[idx][0], lng = gpxPoints[idx][1];
+                  if (!isTooClose(lat, lng)) return [lat, lng];
+                }
+              }
+            }
+            return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
+          }
+          noGpsPhotos.forEach((p, i) => {
+            const ratio = noGpsPhotos.length <= 1 ? 0 : i / (noGpsPhotos.length - 1);
+            const baseIdx = Math.min(Math.floor(ratio * (gpxPoints.length - 1)), gpxPoints.length - 1);
+            const [lat, lng] = findOnRoute(baseIdx);
+            // Don't mutate original — no-GPS photos keep lat:0, lng:0 for saving
+            addPhotoMarker({ ...p, lat, lng });
+          });
+        } else {
+          const baseLat = 36.95, baseLng = 100.90;
+          noGpsPhotos.forEach((p, i) => {
+            const lat = baseLat + (Math.random() - 0.5) * 0.3;
+            const lng = baseLng + (Math.random() - 0.5) * 0.3;
+            addPhotoMarker({ ...p, lat, lng });
+          });
         }
-        return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
-      }
-
-      if (gpxPoints.length > 0) {
-        photos.forEach((p, i) => {
-          const ratio = photos.length <= 1 ? 0 : i / (photos.length - 1);
-          const baseIdx = Math.min(Math.floor(ratio * (gpxPoints.length - 1)), gpxPoints.length - 1);
-          const [lat, lng] = findOnRoute(baseIdx);
-          p.lat = lat; p.lng = lng;
-          addPhotoMarker(p);
-        });
-      } else {
-        const baseLat = 36.95, baseLng = 100.90;
-        photos.forEach((p, i) => {
-          p.lat = baseLat + (Math.random() - 0.5) * 0.3;
-          p.lng = baseLng + (Math.random() - 0.5) * 0.3;
-          addPhotoMarker(p);
-        });
       }
 
       if (routeLine) {
@@ -327,6 +338,9 @@
       const grid = document.getElementById('photo-grid');
 
       for (const file of files) {
+        // Read GPS first (from original file, before compression)
+        const gps = await getPhotoGPS(file);
+
         const dataUrl = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (ev) => resolve(ev.target.result);
@@ -335,7 +349,7 @@
         });
 
         const url = await compressImage(dataUrl, 1200, 0.7);
-        photos.push({ url, lat: 0, lng: 0, name: file.name });
+        photos.push({ url, lat: gps.lat || 0, lng: gps.lng || 0, name: file.name });
 
         const addBtn = grid.querySelector('.photo-add');
         const div = document.createElement('div');
