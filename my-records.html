@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>我的记录 - RideLog</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-left: 8px;
+    }
+    .status-ongoing {
+      background: rgba(255,123,61,0.15);
+      color: var(--primary-dark);
+    }
+    .status-completed {
+      background: rgba(46,204,113,0.15);
+      color: #27ae60;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <img src="images/logo.png" class="logo" alt="DONKE">
+  </div>
+
+  <!-- CTA Button -->
+  <div style="padding: 16px 20px;">
+    <button class="btn btn-accent" style="width:100%;" onclick="location.href='new-journey.html'">
+      +新旅程
+    </button>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar">
+    <div class="stat-item">
+      <div class="stat-value" id="stat-journeys">0</div>
+      <div class="stat-label">旅程</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="stat-distance">0</div>
+      <div class="stat-label">总里程(km)</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="stat-days">0</div>
+      <div class="stat-label">骑行天数</div>
+    </div>
+  </div>
+
+  <!-- Ongoing Journeys -->
+  <div class="section">
+    <div class="section-title">
+      进行中
+      <span class="status-badge status-ongoing" id="ongoing-count">0</span>
+    </div>
+    <div id="ongoing-list"></div>
+  </div>
+
+  <!-- Completed Journeys -->
+  <div class="section">
+    <div class="section-title">
+      已完成
+      <span class="status-badge status-completed" id="completed-count">0</span>
+    </div>
+    <div id="completed-list"></div>
+  </div>
+
+  <!-- Bottom Nav -->
+  <nav class="bottom-nav">
+    <a href="index.html" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      首页
+    </a>
+    <a href="new-journey.html" class="nav-cta">+新旅程</a>
+    <a href="my-records.html" class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      记录
+    </a>
+  </nav>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    const colors = ['#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
+
+    const coverMapsToInit = [];
+
+    function getCoverUrl(j) {
+      const urls = [];
+      (j.segments || []).forEach(s => { if (s.photoUrls) urls.push(...s.photoUrls); });
+      if (urls.length === 0) return null;
+      const hash = String(j.id).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      return urls[hash % urls.length];
+    }
+
+    function renderRecords() {
+      const ongoing = storage.get('ongoingJourneys') || [];
+      const completed = storage.get('completedJourneys') || [];
+
+      // Update counts
+      document.getElementById('ongoing-count').textContent = ongoing.length;
+      document.getElementById('completed-count').textContent = completed.length + SAMPLE_JOURNEYS.length;
+
+      // Calculate stats from all journeys
+      let totalDays = 0;
+      let totalDist = 0;
+      [...ongoing, ...completed, ...SAMPLE_JOURNEYS].forEach(j => {
+        const segs = j.segments || [];
+        totalDays += segs.length;
+        totalDist += segs.reduce((s, seg) => s + (parseFloat(seg.distance) || 0), 0);
+      });
+      document.getElementById('stat-journeys').textContent = ongoing.length + completed.length + SAMPLE_JOURNEYS.length;
+      document.getElementById('stat-distance').textContent = Math.floor(totalDist);
+      document.getElementById('stat-days').textContent = totalDays;
+
+      // Render ongoing
+      const ongoingEl = document.getElementById('ongoing-list');
+      if (ongoing.length === 0) {
+        ongoingEl.innerHTML = `
+          <div class="empty-state" style="padding:30px 20px;">
+            <div class="empty-desc">没有进行中的旅程</div>
+          </div>
+        `;
+      } else {
+        ongoingEl.innerHTML = ongoing.map(j => {
+          const segCount = (j.segments || []).length;
+          return `
+            <div class="card" onclick="location.href='ongoing.html?id=${j.id}'">
+              <div class="card-content">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <div class="card-title">${j.title}</div>
+                  <span class="status-badge status-ongoing">进行中</span>
+                </div>
+                <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">
+                  创建于 ${j.createdAt}
+                </div>
+                <div style="display:flex;gap:16px;margin-top:10px;font-size:13px;color:var(--text-secondary);">
+                  <span>${segCount} 天已记录</span>
+                  <span>点击进入管理</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // Render completed (sample data + stored)
+      const completedEl = document.getElementById('completed-list');
+      const allCompleted = [...completed, ...SAMPLE_JOURNEYS];
+
+      if (allCompleted.length === 0) {
+        completedEl.innerHTML = `
+          <div class="empty-state" style="padding:30px 20px;">
+            <div class="empty-desc">还没有已完成的旅程</div>
+          </div>
+        `;
+      } else {
+        completedEl.innerHTML = allCompleted.map(j => {
+          const segs = j.segments || [];
+          const isUserJourney = completed.some(c => c.id === j.id);
+          const totalDist = segs.reduce((s, seg) => s + (parseFloat(seg.distance) || 0), 0);
+          const totalElev = segs.reduce((s, seg) => s + (parseFloat(seg.elevation) || 0), 0);
+
+          // Determine cover: real map for user journeys with GPX, photo or placeholder otherwise
+          let coverHtml = '';
+          const coverUrl = getCoverUrl(j);
+          const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
+          if (isUserJourney && coverUrl) {
+            coverHtml = `<img src="${coverUrl}" style="width:80px;height:80px;border-radius:10px;object-fit:cover;flex-shrink:0;">`;
+          } else if (isUserJourney && hasGpx) {
+            coverHtml = `<div id="cover-map-${j.id}" class="cover-map-thumb"></div>`;
+            coverMapsToInit.push({ id: j.id, segs: segs });
+          } else if (isUserJourney) {
+            coverHtml = `<img src="https://images.unsplash.com/photo-1541625602330-2277a4c46182?w=400" style="width:80px;height:80px;border-radius:10px;object-fit:cover;flex-shrink:0;">`;
+          } else {
+            // Sample journey: real map with routeCoords
+            if (j.routeCoords && j.routeCoords.length > 0) {
+              coverHtml = `<div id="cover-map-sample-${j.id}" class="cover-map-thumb"></div>`;
+              coverMapsToInit.push({ id: `sample-${j.id}`, routeCoords: j.routeCoords });
+            } else {
+              coverHtml = `<img src="${j.cover || 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?w=400'}" style="width:80px;height:80px;border-radius:10px;object-fit:cover;flex-shrink:0;">`;
+            }
+          }
+
+          return `
+          <div class="card" onclick="location.href='journey-detail.html?id=${j.id}&from=records'" style="margin:12px 20px;">
+            <div class="card-content" style="padding:12px;">
+              <div style="display:flex;gap:12px;">
+                ${coverHtml}
+                <div>
+                  <div style="font-weight:700;font-size:15px;">${j.title}</div>
+                  <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">${j.completedAt || j.date}</div>
+                  <div style="display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text-secondary);">
+                    <span>${totalDist > 0 ? totalDist.toFixed(1) : '-'} km</span>
+                    <span>${segs.length} 天</span>
+                    ${totalElev > 0 ? `<span>↑ ${Math.round(totalElev)}m</span>` : ''}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        }).join('');
+      }
+    }
+    renderRecords();
+
+    // Initialize all cover maps after DOM is ready
+    coverMapsToInit.forEach(item => {
+      const el = document.getElementById(`cover-map-${item.id}`);
+      if (!el) return;
+
+      // Force explicit size before init to prevent Leaflet from using default size
+      el.style.width = '80px';
+      el.style.height = '80px';
+
+      const map = L.map(el, {
+        dragging: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+        tap: false,
+        touchZoom: false,
+        zoomControl: false,
+        attributionControl: false
+      });
+
+      // Force container size and re-render
+      const container = el.querySelector('.leaflet-container');
+      if (container) {
+        container.style.width = '80px';
+        container.style.height = '80px';
+      }
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: ''
+      }).addTo(map);
+
+      let allPoints = [];
+      if (item.segs) {
+        item.segs.forEach((seg, idx) => {
+          if (seg.gpxPoints && seg.gpxPoints.length > 0) {
+            const coords = seg.gpxPoints.filter(p => Array.isArray(p) && p.length >= 2);
+            allPoints = allPoints.concat(coords);
+            if (coords.length >= 2) {
+              L.polyline(coords, {
+                color: colors[idx % colors.length],
+                weight: 3,
+                opacity: 0.9,
+                lineCap: 'round',
+                lineJoin: 'round'
+              }).addTo(map);
+            }
+          }
+        });
+      } else if (item.routeCoords) {
+        item.routeCoords.forEach((coords, idx) => {
+          allPoints = allPoints.concat(coords);
+          if (coords.length >= 2) {
+            L.polyline(coords, {
+              color: colors[idx % colors.length],
+              weight: 3,
+              opacity: 0.9,
+              lineCap: 'round',
+              lineJoin: 'round'
+            }).addTo(map);
+          }
+        });
+      }
+
+      if (allPoints.length > 0) {
+        const bounds = L.latLngBounds(allPoints.map(p => L.latLng(p[0], p[1])));
+        map.fitBounds(bounds, { padding: [5, 5] });
+      }
+
+      // Ensure map renders at correct size
+      requestAnimationFrame(() => {
+        map.invalidateSize();
+        if (container) {
+          container.style.width = '80px';
+          container.style.height = '80px';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

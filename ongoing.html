@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>旅程进行中 - RideLog</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="images/favicon.png">
+</head>
+<body>
+  <!-- Page Header -->
+  <div class="page-header">
+    <button class="back-btn" onclick="goBack()">&#8249;</button>
+    <div class="page-title">旅程进行中</div>
+    <button style="margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="endJourney()">
+      结束旅程
+    </button>
+  </div>
+
+  <!-- Journey Title -->
+  <div style="background:var(--surface);padding:20px;text-align:center;border-bottom:1px solid var(--border);">
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">ONGOING JOURNEY</div>
+    <div style="font-size:22px;font-weight:700;color:var(--text);" id="journey-title">--</div>
+    <div style="font-size:13px;color:var(--text-secondary);margin-top:6px;" id="journey-meta">--</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar" style="margin-top:12px;">
+    <div class="stat-item">
+      <div class="stat-value" id="stat-days">0</div>
+      <div class="stat-label">已记录天数</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="stat-photos">0</div>
+      <div class="stat-label">照片</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="stat-gpx">0</div>
+      <div class="stat-label">GPX路线</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="stat-distance">0</div>
+      <div class="stat-label">总里程(km)</div>
+    </div>
+  </div>
+
+  <!-- Daily Segments List -->
+  <div class="section">
+    <div class="section-title">每日记录</div>
+    <div id="segments-list"></div>
+  </div>
+
+  <!-- Add Segment Button -->
+  <div style="margin:16px 20px;">
+    <button class="btn btn-primary" style="width:100%;" onclick="addSegment()">
+      + 添加 Day <span id="next-day">1</span> 记录
+    </button>
+  </div>
+
+  <!-- Modal: End Journey Confirmation -->
+  <div class="modal-overlay" id="end-modal">
+    <div class="modal">
+      <div class="modal-title">&#127942; 结束旅程</div>
+      <div class="modal-desc">结束旅程后，系统会将所有每日记录合并成一篇精美的旅行日志。确定要结束吗？</div>
+      <div class="action-row" style="margin:0;">
+        <button class="btn btn-secondary" onclick="document.getElementById('end-modal').classList.remove('active')">继续记录</button>
+        <button class="btn btn-accent" onclick="confirmEndJourney()">确认结束</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(location.search);
+    const journeyId = urlParams.get('id');
+    const fromPage = urlParams.get('from') || 'records';
+
+    function goBack() {
+      if (fromPage === 'index') {
+        location.href = 'index.html';
+      } else {
+        location.href = 'my-records.html';
+      }
+    }
+
+    // Load journey from storage
+    let journeys = storage.get('ongoingJourneys') || [];
+    let journey = journeys.find(j => j.id === journeyId);
+
+    if (!journey) {
+      alert('旅程不存在');
+      location.href = 'my-records.html';
+    }
+
+    // Update UI
+    document.getElementById('journey-title').textContent = journey.title;
+    document.getElementById('journey-meta').textContent = `创建于 ${journey.createdAt}`;
+
+    // Generate SVG route snapshot from GPX points with map-like background
+    function generateRouteSvg(gpxPoints, size = 100) {
+      try {
+        if (!gpxPoints || gpxPoints.length < 2) return '';
+
+        // Validate points format [lat, lon]
+        const pts = gpxPoints
+          .filter(p => Array.isArray(p) && p.length >= 2 && typeof p[0] === 'number' && typeof p[1] === 'number')
+          .map(p => ({ lat: p[0], lon: p[1] }));
+
+        if (pts.length < 2) return '';
+
+        const minLat = Math.min(...pts.map(p => p.lat));
+        const maxLat = Math.max(...pts.map(p => p.lat));
+        const minLon = Math.min(...pts.map(p => p.lon));
+        const maxLon = Math.max(...pts.map(p => p.lon));
+
+        if (!isFinite(minLat) || !isFinite(maxLat) || !isFinite(minLon) || !isFinite(maxLon)) return '';
+
+        // Add padding
+        const latPad = (maxLat - minLat) * 0.15 || 0.01;
+        const lonPad = (maxLon - minLon) * 0.15 || 0.01;
+
+        const latRange = (maxLat + latPad) - (minLat - latPad);
+        const lonRange = (maxLon + lonPad) - (minLon - lonPad);
+
+        // Map to SVG coordinates
+        const mapX = lon => ((lon - (minLon - lonPad)) / lonRange) * size;
+        const mapY = lat => size - ((lat - (minLat - latPad)) / latRange) * size;
+
+        const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${mapX(p.lon).toFixed(1)},${mapY(p.lat).toFixed(1)}`).join(' ');
+        const sx = mapX(pts[0].lon).toFixed(1);
+        const sy = mapY(pts[0].lat).toFixed(1);
+        const ex = mapX(pts[pts.length - 1].lon).toFixed(1);
+        const ey = mapY(pts[pts.length - 1].lat).toFixed(1);
+
+        // Build map-like background: grid lines + random blocks
+        let bgElements = '';
+        const gridStep = size / 6;
+        for (let i = 0; i <= 6; i++) {
+          const pos = (i * gridStep).toFixed(1);
+          bgElements += `<line x1="${pos}" y1="0" x2="${pos}" y2="${size}" stroke="#dce5d8" stroke-width="0.8"/>`;
+          bgElements += `<line x1="0" y1="${pos}" x2="${size}" y2="${pos}" stroke="#dce5d8" stroke-width="0.8"/>`;
+        }
+        // Add some random "blocks" to simulate buildings/land features
+        const seed = pts.length;
+        const blocks = [
+          { x: 5, y: 5, w: 12, h: 10 },
+          { x: 22, y: 8, w: 8, h: 12 },
+          { x: 55, y: 15, w: 15, h: 8 },
+          { x: 75, y: 5, w: 10, h: 10 },
+          { x: 8, y: 35, w: 10, h: 15 },
+          { x: 35, y: 40, w: 12, h: 8 },
+          { x: 60, y: 35, w: 10, h: 12 },
+          { x: 82, y: 38, w: 10, h: 10 },
+          { x: 15, y: 65, w: 15, h: 10 },
+          { x: 40, y: 70, w: 10, h: 10 },
+          { x: 65, y: 65, w: 12, h: 12 },
+          { x: 85, y: 72, w: 8, h: 8 },
+          { x: 5, y: 85, w: 10, h: 10 },
+          { x: 30, y: 88, w: 12, h: 8 },
+          { x: 55, y: 85, w: 10, h: 10 },
+          { x: 78, y: 88, w: 12, h: 8 },
+        ];
+        blocks.forEach(b => {
+          bgElements += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="2" fill="#dbe7d6" opacity="0.6"/>`;
+        });
+
+        return `
+          <svg width="100%" height="100%" viewBox="0 0 ${size} ${size}" style="border-radius:8px;display:block;">
+            <rect width="${size}" height="${size}" fill="#edf3ea"/>
+            ${bgElements}
+            <path d="${pathD}" fill="none" stroke="#FF7B3D" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="${sx}" cy="${sy}" r="4.5" fill="#2ecc71" stroke="white" stroke-width="2"/>
+            <circle cx="${ex}" cy="${ey}" r="4.5" fill="#e74c3c" stroke="white" stroke-width="2"/>
+          </svg>
+        `;
+      } catch (e) {
+        console.error('generateRouteSvg error:', e);
+        return '';
+      }
+    }
+
+    function renderSegments() {
+      const segs = journey.segments || [];
+      console.log('renderSegments, count:', segs.length, 'data:', segs);
+
+      document.getElementById('stat-days').textContent = segs.length;
+      document.getElementById('stat-photos').textContent = segs.reduce((s, seg) => s + (seg.photoCount || 0), 0);
+      document.getElementById('stat-gpx').textContent = segs.filter(s => s.gpx).length;
+      const totalDist = segs.reduce((s, seg) => s + (parseFloat(seg.distance) || 0), 0);
+      document.getElementById('stat-distance').textContent = totalDist > 0 ? totalDist.toFixed(1) : 0;
+      document.getElementById('next-day').textContent = segs.length + 1;
+
+      const listEl = document.getElementById('segments-list');
+      if (segs.length === 0) {
+        listEl.innerHTML = `
+          <div class="empty-state" style="padding:40px 20px;">
+            <div class="empty-icon">&#128197;</div>
+            <div class="empty-title">还没有每日记录</div>
+            <div class="empty-desc">点击下方按钮添加你的第一天骑行记录</div>
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = segs.map((seg, i) => ({ seg, i }))
+        .reverse()
+        .map(({ seg, i }) => {
+        try {
+          // Normalize old data format
+          const photoCount = seg.photoCount !== undefined ? seg.photoCount : (seg.photos || 0);
+          const photoUrls = seg.photoUrls || [];
+          const gpxPoints = seg.gpxPoints || [];
+          const hasGpx = seg.gpx || (gpxPoints.length > 0);
+
+          // Build images: route snapshot first, then photos
+          const images = [];
+
+          // Route snapshot (always present if GPX)
+          if (hasGpx && gpxPoints.length > 0) {
+            const svg = generateRouteSvg(gpxPoints);
+            if (svg) images.push(svg);
+          }
+
+          // Photos (up to 7, route takes 1 slot, total 8 max)
+          if (photoUrls.length > 0) {
+            photoUrls.slice(0, 7).forEach(url => {
+              images.push(`<img src="${url}" style="width:100%;aspect-ratio:1;border-radius:8px;object-fit:cover;display:block;" data-fullscreen="${url}">`);
+            });
+          }
+
+          return `
+            <div class="card" style="margin:12px 20px;cursor:pointer;" onclick="location.href='daily-segment.html?edit=1&amp;idx=${i}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">
+              <div class="card-content">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                  <div class="segment-day" style="width:40px;height:40px;">
+                    <div class="day-num" style="font-size:16px;">${seg.day}</div>
+                    <div class="day-label">DAY</div>
+                  </div>
+                  <div style="flex:1;">
+                    <div style="font-weight:700;font-size:15px;">${seg.date}</div>
+                    <div style="display:flex;gap:10px;margin-top:3px;">
+                      ${seg.distance ? `<span style="font-size:12px;color:var(--text-secondary);">${seg.distance} km</span>` : ''}
+                      ${seg.elevation ? `<span style="font-size:12px;color:var(--text-secondary);">↑ ${seg.elevation}m</span>` : ''}
+                      ${seg.duration ? `<span style="font-size:12px;color:var(--text-secondary);">${seg.duration}</span>` : ''}
+                    </div>
+                  </div>
+                  <span style="font-size:12px;color:var(--text-secondary);">&#9998; 编辑</span>
+                </div>
+                <div style="font-size:14px;color:var(--text);line-height:1.6;margin-bottom:12px;">${seg.note}</div>
+                ${images.length > 0 ? `
+                  <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:8px;">
+                    ${images.join('')}
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        } catch (e) {
+          console.error('Error rendering segment', i, e);
+          return `<div style="padding:16px;color:red;">Day ${seg.day} 渲染出错</div>`;
+        }
+      }).join('');
+    }
+
+    renderSegments();
+
+    function addSegment() {
+      const nextDay = (journey.segments || []).length + 1;
+      location.href = `daily-segment.html?day=${nextDay}&journeyId=${journey.id}&journey=${encodeURIComponent(journey.title)}`;
+    }
+
+    function endJourney() {
+      const segs = journey.segments || [];
+      if (segs.length === 0) {
+        alert('至少添加一天的记录才能结束旅程');
+        return;
+      }
+      document.getElementById('end-modal').classList.add('active');
+    }
+
+    function confirmEndJourney() {
+      document.getElementById('end-modal').classList.remove('active');
+
+      // Move from ongoing to completed
+      let ongoing = storage.get('ongoingJourneys') || [];
+      ongoing = ongoing.filter(j => j.id !== journeyId);
+      storage.set('ongoingJourneys', ongoing);
+
+      let completed = storage.get('completedJourneys') || [];
+      journey.completedAt = new Date().toISOString().split('T')[0];
+      completed.unshift(journey);
+      storage.set('completedJourneys', completed);
+
+      alert('旅程已结束！正在生成旅行日志...');
+      location.href = `journey-detail.html?id=${journeyId}&completed=1&from=records`;
+    }
+  </script>
+</body>
+</html>

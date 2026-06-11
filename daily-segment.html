@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>每日记录 - RideLog</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+  <!-- Page Header -->
+  <div class="page-header">
+    <button class="back-btn" onclick="history.back()">&#8249;</button>
+    <div class="page-title" id="page-title">每日记录</div>
+  </div>
+
+  <!-- Day Badge -->
+  <div style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;padding:16px 20px;text-align:center;">
+    <div style="font-size:12px;opacity:0.9;">JOURNEY DAY</div>
+    <div style="font-size:36px;font-weight:800;" id="day-number">1</div>
+    <div style="font-size:14px;" id="journey-name">新旅程</div>
+  </div>
+
+  <!-- Date Picker -->
+  <div class="form-group" style="margin-top:16px;">
+    <label class="form-label">日期</label>
+    <input type="date" class="form-input" id="date-input" style="max-width:100%;min-width:0;">
+  </div>
+
+  <!-- Daily Note -->
+  <div class="form-group">
+    <label class="form-label">今日笔记</label>
+    <textarea class="form-textarea" id="note-input" placeholder="记录今天的骑行见闻、风景、心情..."></textarea>
+  </div>
+
+  <!-- Photos Upload -->
+  <div class="section">
+    <div class="section-title">照片记录 <span style="font-weight:400;color:var(--text-secondary);">(自动读取GPS位置)</span></div>
+    <div class="photo-grid" id="photo-grid">
+      <div class="photo-add" onclick="document.getElementById('photo-input').click()">+</div>
+    </div>
+    <input type="file" id="photo-input" accept="image/*" multiple style="display:none;" onchange="handlePhotos(event)">
+    <div style="font-size:12px;color:var(--text-secondary);padding:0 20px;margin-top:4px;">
+      点击 + 上传照片，照片将标记在地图上对应的位置
+    </div>
+  </div>
+
+  <!-- GPX Upload -->
+  <div class="section">
+    <div class="section-title">GPX 路线文件</div>
+    <div class="upload-area" onclick="document.getElementById('gpx-input').click()">
+      <div class="upload-icon">&#128220;</div>
+      <div class="upload-text">点击上传今日 GPX 路线文件</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">支持 .gpx 格式</div>
+    </div>
+    <input type="file" id="gpx-input" accept=".gpx" style="display:none;" onchange="handleGPX(event)">
+    <div id="gpx-preview"></div>
+  </div>
+
+  <!-- Route Preview Map -->
+  <div class="section" id="route-section" style="display:none;">
+    <div class="section-title">路线预览</div>
+    <div class="map-container" id="map-wrap" style="position:relative;">
+      <div id="map" style="height:280px;"></div>
+      <button id="map-fs-btn" style="position:absolute;top:8px;right:8px;z-index:500;padding:6px 12px;border-radius:6px;border:none;background:rgba(0,0,0,0.6);color:white;font-size:13px;cursor:pointer;" onclick="toggleMapFullscreen()">全屏</button>
+    </div>
+  </div>
+
+  <!-- Today's Stats -->
+  <div class="section" id="stats-section" style="display:none;">
+    <div class="section-title">今日数据</div>
+    <div class="stats-bar">
+      <div class="stat-item">
+        <div class="stat-value" id="stat-dist">-</div>
+        <div class="stat-label">里程(km)</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value" id="stat-elev">-</div>
+        <div class="stat-label">爬升(m)</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value" id="stat-time">-</div>
+        <div class="stat-label">用时</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="action-row" style="margin-top:24px;margin-bottom:32px;">
+    <button class="btn btn-secondary" onclick="history.back()">放弃</button>
+    <button class="btn btn-primary" onclick="saveSegment()">保存本日</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(location.search);
+    const dayNum = urlParams.get('day') || '1';
+    const journeyId = urlParams.get('journeyId') || '';
+    const journeyName = decodeURIComponent(urlParams.get('journey') || '新旅程');
+    const isEdit = urlParams.get('edit') === '1';
+    const editIdx = parseInt(urlParams.get('idx') || '-1');
+
+    document.getElementById('day-number').textContent = dayNum;
+    document.getElementById('journey-name').textContent = journeyName;
+
+    // Init variables and map first (before edit mode prefill)
+    const map = L.map('map').setView([36.95, 100.90], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    let photos = [];
+    let gpxPoints = [];
+    let routeLine = null;
+    let photoMarkers = [];
+    let startMarker = null;
+    let endMarker = null;
+    let pinSize = 36;
+    let routeWeight = 4;
+
+    // Load journey data (check ongoing first, then completed)
+    let journeys = storage.get('ongoingJourneys') || [];
+    let journey = journeys.find(j => j.id === journeyId);
+    if (!journey) {
+      journeys = storage.get('completedJourneys') || [];
+      journey = journeys.find(j => j.id === journeyId);
+    }
+    let existingSeg = null;
+
+    if (isEdit && editIdx >= 0 && journey && journey.segments && journey.segments[editIdx]) {
+      existingSeg = journey.segments[editIdx];
+      document.getElementById('page-title').textContent = '编辑记录';
+
+      // Prefill form
+      document.getElementById('date-input').value = existingSeg.date || '';
+      document.getElementById('note-input').value = existingSeg.note || '';
+
+      // Prefill photos
+      if (existingSeg.photoUrls && existingSeg.photoUrls.length > 0) {
+        const grid = document.getElementById('photo-grid');
+        const addBtn = grid.querySelector('.photo-add');
+        existingSeg.photoUrls.forEach((url, i) => {
+          photos.push({ url, lat: 0, lng: 0, name: 'photo' });
+          const div = document.createElement('div');
+          div.className = 'photo-item';
+          div.dataset.idx = i;
+          div.style.position = 'relative';
+          div.innerHTML = `
+            <img src="${url}" data-fullscreen="${url}">
+            <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:white;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;z-index:2;" onclick="removePhoto(this)">×</div>
+          `;
+          grid.insertBefore(div, addBtn);
+        });
+      }
+
+      // Prefill GPX route
+      if (existingSeg.gpxPoints && existingSeg.gpxPoints.length > 0) {
+        gpxPoints = existingSeg.gpxPoints;
+        drawRouteOnMap();
+        document.getElementById('gpx-preview').innerHTML = `
+          <div class="gpx-file">
+            <span class="gpx-icon">&#128220;</span>
+            <div>
+              <div class="gpx-name">${existingSeg.distance || '-'} km 路线</div>
+              <div style="font-size:12px;color:var(--text-secondary);">${gpxPoints.length} 个轨迹点</div>
+            </div>
+            <span class="gpx-status">&#10003; 已上传</span>
+          </div>
+        `;
+
+        // Show stats and stats values from existing data
+        document.getElementById('route-section').style.display = 'block';
+        document.getElementById('stats-section').style.display = 'block';
+        document.getElementById('stat-dist').textContent = existingSeg.distance || '-';
+        document.getElementById('stat-elev').textContent = existingSeg.elevation || '-';
+        document.getElementById('stat-time').textContent = existingSeg.duration || '-';
+        setTimeout(() => { map.invalidateSize(); redistributePhotos(); }, 100);
+      }
+    } else {
+      // Set today's date for new segment
+      document.getElementById('date-input').valueAsDate = new Date();
+    }
+
+    function compressImage(dataUrl, maxWidth = 1200, quality = 0.7) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if (w > maxWidth) {
+            h = Math.round(h * maxWidth / w);
+            w = maxWidth;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = reject;
+        img.src = dataUrl;
+      });
+    }
+
+    function addPhotoMarker(photo) {
+      const s = pinSize;
+      const icon = L.divIcon({
+        className: 'photo-pin',
+        html: `<img src="${photo.url}" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">`,
+        iconSize: [s, s],
+        iconAnchor: [s / 2, s]
+      });
+      const marker = L.marker([photo.lat, photo.lng], { icon }).addTo(map);
+      marker.on('click', () => {
+        const overlay = document.querySelector('.fullscreen-overlay');
+        if (overlay) {
+          overlay.querySelector('img').src = photo.url;
+          overlay.classList.add('active');
+        }
+      });
+      photoMarkers.push(marker);
+    }
+
+    function clearPhotoMarkers() {
+      photoMarkers.forEach(m => map.removeLayer(m));
+      photoMarkers = [];
+    }
+
+    function redistributePhotos() {
+      if (photos.length === 0) return;
+      clearPhotoMarkers();
+
+      const minPx = pinSize * 1.5;
+
+      function isTooClose(lat, lng) {
+        const pt = map.latLngToContainerPoint([lat, lng]);
+        for (const m of photoMarkers) {
+          const mPt = map.latLngToContainerPoint(m.getLatLng());
+          const dx = pt.x - mPt.x, dy = pt.y - mPt.y;
+          if (Math.sqrt(dx * dx + dy * dy) < minPx) return true;
+        }
+        return false;
+      }
+
+      function findOnRoute(baseIdx) {
+        if (!isTooClose(gpxPoints[baseIdx][0], gpxPoints[baseIdx][1])) {
+          return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
+        }
+        for (let step = 1; step < gpxPoints.length; step++) {
+          for (const dir of [-1, 1]) {
+            const idx = baseIdx + dir * step;
+            if (idx >= 0 && idx < gpxPoints.length) {
+              const lat = gpxPoints[idx][0], lng = gpxPoints[idx][1];
+              if (!isTooClose(lat, lng)) return [lat, lng];
+            }
+          }
+        }
+        return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
+      }
+
+      if (gpxPoints.length > 0) {
+        photos.forEach((p, i) => {
+          const ratio = photos.length <= 1 ? 0 : i / (photos.length - 1);
+          const baseIdx = Math.min(Math.floor(ratio * (gpxPoints.length - 1)), gpxPoints.length - 1);
+          const [lat, lng] = findOnRoute(baseIdx);
+          p.lat = lat; p.lng = lng;
+          addPhotoMarker(p);
+        });
+      } else {
+        const baseLat = 36.95, baseLng = 100.90;
+        photos.forEach((p, i) => {
+          p.lat = baseLat + (Math.random() - 0.5) * 0.3;
+          p.lng = baseLng + (Math.random() - 0.5) * 0.3;
+          addPhotoMarker(p);
+        });
+      }
+
+      if (routeLine) {
+        map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+      } else if (photoMarkers.length > 0) {
+        map.fitBounds(photoMarkers.map(m => m.getLatLng()), { padding: [40, 40] });
+      }
+    }
+
+    function toggleMapFullscreen() {
+      const wrap = document.getElementById('map-wrap');
+      const btn = document.getElementById('map-fs-btn');
+      const isFs = wrap.classList.contains('map-fullscreen');
+      if (!isFs) {
+        wrap.classList.add('map-fullscreen');
+        wrap.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;background:#fff;padding:0;margin:0;border-radius:0;';
+        document.getElementById('map').style.height = '100%';
+        btn.textContent = '退出全屏';
+        btn.style.top = '12px';
+        btn.style.right = '12px';
+        pinSize = 56;
+        routeWeight = 8;
+      } else {
+        wrap.classList.remove('map-fullscreen');
+        wrap.style.cssText = 'position:relative;';
+        document.getElementById('map').style.height = '280px';
+        btn.textContent = '全屏';
+        btn.style.top = '8px';
+        btn.style.right = '8px';
+        pinSize = 36;
+        routeWeight = 4;
+      }
+      drawRouteOnMap();
+      redistributePhotos();
+      setTimeout(() => map.invalidateSize(), 100);
+    }
+
+    function removePhoto(btn) {
+      const item = btn.parentElement;
+      const idx = parseInt(item.dataset.idx);
+      if (isNaN(idx) || idx < 0 || idx >= photos.length) return;
+      photos.splice(idx, 1);
+      item.remove();
+      document.querySelectorAll('.photo-item').forEach((el, i) => { el.dataset.idx = i; });
+      redistributePhotos();
+    }
+
+    async function handlePhotos(e) {
+      const files = Array.from(e.target.files);
+      const grid = document.getElementById('photo-grid');
+
+      for (const file of files) {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => resolve(ev.target.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const url = await compressImage(dataUrl, 1200, 0.7);
+        photos.push({ url, lat: 0, lng: 0, name: file.name });
+
+        const addBtn = grid.querySelector('.photo-add');
+        const div = document.createElement('div');
+        div.className = 'photo-item';
+        div.dataset.idx = photos.length - 1;
+        div.style.position = 'relative';
+        div.innerHTML = `
+          <img src="${url}" data-fullscreen="${url}">
+          <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:white;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;z-index:2;" onclick="removePhoto(this)">×</div>
+        `;
+        grid.insertBefore(div, addBtn);
+      }
+
+      redistributePhotos();
+    }
+
+    // Haversine formula
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function parseGPXFull(gpxText) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(gpxText, 'text/xml');
+      const points = [];
+      doc.querySelectorAll('trkpt').forEach(pt => {
+        const eleEl = pt.querySelector('ele');
+        const timeEl = pt.querySelector('time');
+        points.push({
+          lat: parseFloat(pt.getAttribute('lat')),
+          lon: parseFloat(pt.getAttribute('lon')),
+          ele: eleEl ? parseFloat(eleEl.textContent) : null,
+          time: timeEl ? new Date(timeEl.textContent) : null
+        });
+      });
+      return points;
+    }
+
+    function drawRouteOnMap() {
+      if (routeLine) map.removeLayer(routeLine);
+      if (startMarker) map.removeLayer(startMarker);
+      if (endMarker) map.removeLayer(endMarker);
+
+      routeLine = L.polyline(gpxPoints, {
+        color: '#FF7B3D',
+        weight: routeWeight,
+        opacity: 0.85
+      }).addTo(map);
+
+      const startIcon = L.divIcon({
+        className: '',
+        html: '<div style="width:28px;height:28px;border-radius:50%;background:#2ecc71;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700;">起</div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      const endIcon = L.divIcon({
+        className: '',
+        html: '<div style="width:28px;height:28px;border-radius:50%;background:#e74c3c;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700;">终</div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      startMarker = L.marker(gpxPoints[0], { icon: startIcon, zIndexOffset: 1000 }).addTo(map);
+      endMarker = L.marker(gpxPoints[gpxPoints.length - 1], { icon: endIcon, zIndexOffset: 1000 }).addTo(map);
+    }
+
+    function handleGPX(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const rawPoints = parseGPXFull(ev.target.result);
+        if (rawPoints.length === 0) {
+          alert('未能解析 GPX 文件，请检查文件格式');
+          return;
+        }
+
+        gpxPoints = rawPoints.map(p => [p.lat, p.lon]);
+
+        let totalDist = 0;
+        for (let i = 1; i < rawPoints.length; i++) {
+          totalDist += haversine(rawPoints[i - 1].lat, rawPoints[i - 1].lon, rawPoints[i].lat, rawPoints[i].lon);
+        }
+
+        let totalElev = 0;
+        for (let i = 1; i < rawPoints.length; i++) {
+          const prev = rawPoints[i - 1].ele;
+          const curr = rawPoints[i].ele;
+          if (prev != null && curr != null && curr > prev) {
+            totalElev += (curr - prev);
+          }
+        }
+
+        let durationHours = 0;
+        const times = rawPoints.filter(p => p.time).map(p => p.time.getTime());
+        if (times.length >= 2) {
+          const durationMs = Math.max(...times) - Math.min(...times);
+          durationHours = durationMs / (1000 * 60 * 60);
+        }
+        if (durationHours === 0 && totalDist > 0) {
+          durationHours = totalDist / 20;
+        }
+
+        drawRouteOnMap();
+
+        document.getElementById('route-section').style.display = 'block';
+        document.getElementById('stats-section').style.display = 'block';
+
+        setTimeout(() => {
+          map.invalidateSize();
+          map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+        }, 50);
+
+        document.getElementById('gpx-preview').innerHTML = `
+          <div class="gpx-file">
+            <span class="gpx-icon">&#128220;</span>
+            <div>
+              <div class="gpx-name">${file.name}</div>
+              <div style="font-size:12px;color:var(--text-secondary);">${rawPoints.length} 个轨迹点</div>
+            </div>
+            <span class="gpx-status">&#10003; 已解析</span>
+          </div>
+        `;
+
+        document.getElementById('stat-dist').textContent = totalDist.toFixed(1);
+        document.getElementById('stat-elev').textContent = Math.round(totalElev);
+
+        const h = Math.floor(durationHours);
+        const m = Math.round((durationHours - h) * 60);
+        if (h > 0 && m > 0) {
+          document.getElementById('stat-time').textContent = `${h}h${m}m`;
+        } else if (h > 0) {
+          document.getElementById('stat-time').textContent = `${h}h`;
+        } else {
+          document.getElementById('stat-time').textContent = `${m}m`;
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function saveSegment() {
+      const date = document.getElementById('date-input').value;
+      const note = document.getElementById('note-input').value;
+
+      if (!note.trim()) {
+        alert('请填写今日笔记');
+        return;
+      }
+
+      const distVal = document.getElementById('stat-dist').textContent;
+      const elevVal = document.getElementById('stat-elev').textContent;
+      const timeVal = document.getElementById('stat-time').textContent;
+      const segmentData = {
+        day: parseInt(dayNum),
+        date: date,
+        note: note,
+        photoCount: photos.length,
+        photos: photos.map(p => ({ url: p.url, lat: p.lat, lng: p.lng })),
+        photoUrls: photos.map(p => p.url),
+        gpx: gpxPoints.length > 0,
+        gpxPoints: gpxPoints,
+        distance: distVal === '-' ? 0 : parseFloat(distVal) || 0,
+        elevation: elevVal === '-' ? 0 : parseFloat(elevVal) || 0,
+        duration: timeVal === '-' ? '' : timeVal
+      };
+
+      let journeys = storage.get('ongoingJourneys') || [];
+      let idx = journeys.findIndex(j => j.id === journeyId);
+      let storageKey = 'ongoingJourneys';
+      let isCompleted = false;
+
+      if (idx < 0) {
+        journeys = storage.get('completedJourneys') || [];
+        idx = journeys.findIndex(j => j.id === journeyId);
+        storageKey = 'completedJourneys';
+        isCompleted = true;
+      }
+
+      if (idx < 0) {
+        alert('旅程不存在');
+        return;
+      }
+
+      if (!journeys[idx].segments) journeys[idx].segments = [];
+
+      if (isEdit && editIdx >= 0) {
+        // Update existing segment
+        journeys[idx].segments[editIdx] = segmentData;
+      } else {
+        // Append new segment
+        journeys[idx].segments.push(segmentData);
+      }
+
+      const ok = storage.set(storageKey, journeys);
+      if (!ok) {
+        alert('保存失败：数据过大（照片可能太多）。\n\n建议：\n1. 减少照片数量\n2. 或使用更小尺寸的照片');
+        return;
+      }
+      location.href = isCompleted ? `journey-detail.html?id=${journeyId}&from=records` : `ongoing.html?id=${journeyId}`;
+    }
+  </script>
+</body>
+</html>
