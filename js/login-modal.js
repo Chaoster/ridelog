@@ -129,12 +129,20 @@
       submitBtn.textContent = '处理中...';
 
       try {
-        const { error } = await supabaseClient.auth.verifyOtp({
+        let { error } = await supabaseClient.auth.verifyOtp({
           email,
           token: code,
           type: 'email'
         });
-        if (error) throw error;
+
+        if (error) {
+          const { error: signUpError } = await supabaseClient.auth.verifyOtp({
+            email,
+            token: code,
+            type: 'signup'
+          });
+          if (signUpError) throw signUpError;
+        }
 
         hideLoginModal();
         sessionStorage.setItem('loginSuccess', '1');
