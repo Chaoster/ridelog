@@ -114,11 +114,14 @@
       let completed = [];
       try {
         if (await window.journeyService.isLoggedIn()) {
-          await window.journeyService.migrateLocalStorage();
           [ongoing, completed] = await Promise.all([
             window.journeyService.getJourneys({ status: 'ongoing' }),
             window.journeyService.getJourneys({ status: 'completed' })
           ]);
+          // 后台迁移旧数据，不阻塞列表显示
+          window.journeyService.migrateLocalStorage().catch(err => {
+            console.error('[my-records] migrate error:', err);
+          });
         } else {
           ongoing = storage.get('ongoingJourneys') || [];
           completed = storage.get('completedJourneys') || [];
