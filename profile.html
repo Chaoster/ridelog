@@ -274,17 +274,37 @@
     async function saveAvatar() {
       if (!pendingAvatarDataUrl) return;
 
-      const { error } = await supabaseClient.auth.updateUser({
-        data: { avatar: pendingAvatarDataUrl }
-      });
+      try {
+        const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+        if (userError || !user) throw new Error('未登录，无法上传头像');
 
-      if (error) {
-        alert('保存失败：' + error.message);
-        return;
+        const blob = await dataUrlToBlob(pendingAvatarDataUrl);
+
+        const fileName = `${user.id}/${Date.now()}.jpg`;
+        const { error: uploadError } = await supabaseClient.storage
+          .from('avatars')
+          .upload(fileName, blob, {
+            contentType: 'image/jpeg',
+            upsert: true
+          });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabaseClient.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+        const { error: updateError } = await supabaseClient.auth.updateUser({
+          data: { avatar: publicUrl }
+        });
+
+        if (updateError) throw updateError;
+
+        showAvatar(publicUrl);
+        closeAvatarModal();
+      } catch (err) {
+        alert('保存失败：' + (err.message || '未知错误'));
       }
-
-      showAvatar(pendingAvatarDataUrl);
-      closeAvatarModal();
     }
 
     function showAvatar(dataUrl) {

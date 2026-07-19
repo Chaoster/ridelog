@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="css/style.css?v=7">
   <link rel="icon" type="image/png" href="images/favicon.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
 </head>
 <body class="page-no-nav" style="padding-bottom:20px;">
   <!-- Page Header -->
@@ -265,6 +267,29 @@
       });
     }
 
+    function randomSuffix() {
+      return Math.random().toString(36).slice(2, 6);
+    }
+
+    async function uploadSegmentPhoto(blob) {
+      const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+      if (userError || !user) throw new Error('未登录，无法上传照片');
+      if (!journeyId) throw new Error('缺少 journeyId');
+
+      const fileName = `${user.id}/${journeyId}/${dayNum}/${Date.now()}_${randomSuffix()}.jpg`;
+      const { error: uploadError } = await supabaseClient.storage
+        .from('segment-photos')
+        .upload(fileName, blob, { contentType: 'image/jpeg' });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabaseClient.storage
+        .from('segment-photos')
+        .getPublicUrl(fileName);
+
+      return publicUrl;
+    }
+
     function addPhotoMarker(photo) {
       const s = pinSize;
       const icon = L.divIcon({
@@ -406,7 +431,17 @@
           reader.readAsDataURL(file);
         });
 
-        const url = await compressImage(dataUrl, 1200, 0.7);
+        const compressedUrl = await compressImage(dataUrl, 1200, 0.7);
+
+        let url = compressedUrl;
+        try {
+          const blob = await dataUrlToBlob(compressedUrl);
+          url = await uploadSegmentPhoto(blob);
+        } catch (err) {
+          console.error('上传照片失败，使用本地 base64:', err);
+          alert('照片上传失败，将临时保存在本地。建议检查网络后重新保存本日记录。');
+        }
+
         photos.push({ url, lat: gps.lat || 0, lng: gps.lng || 0, name: file.name });
 
         const addBtn = grid.querySelector('.photo-add');

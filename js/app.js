@@ -57,6 +57,13 @@ const storage = {
   },
 };
 
+// Convert a data URL (e.g. canvas.toDataURL) to a Blob for uploading
+async function dataUrlToBlob(dataUrl) {
+  const response = await fetch(dataUrl);
+  return response.blob();
+}
+
+
 // Sample data for demo (empty - only user journeys shown)
 const SAMPLE_JOURNEYS = [];
 
