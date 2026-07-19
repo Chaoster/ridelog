@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>我的 - RideLog</title>
+  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <style>
+    .profile-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      margin: 20px;
+      padding: 40px 20px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .profile-avatar {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 4px 16px rgba(255,123,61,0.3);
+      cursor: pointer;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .profile-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .profile-avatar svg {
+      width: 48px;
+      height: 48px;
+    }
+
+    .avatar-crop-wrap {
+      width: 100%;
+      max-width: 300px;
+      margin: 0 auto;
+      aspect-ratio: 1 / 1;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .avatar-crop-wrap canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #avatar-modal .modal {
+      text-align: center;
+    }
+
+    #avatar-modal .action-row {
+      margin: 20px 0 0;
+    }
+
+    .profile-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .profile-name {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .edit-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: var(--bg);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .edit-btn:active {
+      transform: scale(0.92);
+      background: var(--border);
+    }
+
+    .edit-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .profile-hint {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    #edit-modal .modal {
+      text-align: left;
+    }
+
+    #edit-modal .action-row {
+      margin: 20px 0 0;
+    }
+  </style>
+</head>
+<body class="page-no-nav" style="padding-bottom:20px;">
+  <!-- Page Header -->
+  <div class="page-header">
+    <button class="back-btn" onclick="history.back()">&#8249;</button>
+    <div class="page-title">我的</div>
+  </div>
+
+  <!-- Profile Card -->
+  <div class="profile-card">
+    <div class="profile-avatar" onclick="openAvatarPicker()">
+      <img id="avatar-img" class="hidden" alt="头像">
+      <svg id="avatar-default" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+    </div>
+    <input type="file" id="avatar-input" accept="image/*" hidden>
+    <div class="profile-name-row">
+      <span class="profile-name" id="nickname">一只小毛驴</span>
+      <button class="edit-btn" onclick="event.stopPropagation(); openEditModal()" aria-label="编辑昵称">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="profile-hint">点击头像更换</div>
+  </div>
+
+  <!-- Logout Button -->
+  <div style="margin: 40px 20px 0;">
+    <button class="btn btn-secondary" style="width:100%;" onclick="logout()">退出登录</button>
+  </div>
+
+  <!-- Edit Nickname Modal -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+      <div class="modal-title">编辑昵称</div>
+      <input type="text" class="form-input" id="nickname-input" maxlength="20" placeholder="请输入昵称">
+      <div class="action-row">
+        <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveNickname()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Avatar Crop Modal -->
+  <div class="modal-overlay" id="avatar-modal">
+    <div class="modal">
+      <div class="modal-title">裁剪头像</div>
+      <div class="avatar-crop-wrap">
+        <canvas id="avatar-canvas" width="300" height="300"></canvas>
+      </div>
+      <div class="action-row">
+        <button class="btn btn-secondary" onclick="closeAvatarModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveAvatar()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const nicknameEl = document.getElementById('nickname');
+    const editModal = document.getElementById('edit-modal');
+    const nicknameInput = document.getElementById('nickname-input');
+    const avatarImg = document.getElementById('avatar-img');
+    const avatarDefault = document.getElementById('avatar-default');
+    const avatarInput = document.getElementById('avatar-input');
+    const avatarModal = document.getElementById('avatar-modal');
+    const avatarCanvas = document.getElementById('avatar-canvas');
+    const avatarCtx = avatarCanvas.getContext('2d');
+
+    let pendingAvatarDataUrl = null;
+
+    function openEditModal() {
+      nicknameInput.value = nicknameEl.textContent;
+      editModal.classList.add('active');
+      nicknameInput.focus();
+    }
+
+    function closeEditModal() {
+      editModal.classList.remove('active');
+    }
+
+    async function saveNickname() {
+      const value = nicknameInput.value.trim();
+      if (!value) return;
+
+      const { error } = await supabaseClient.auth.updateUser({
+        data: { nickname: value }
+      });
+
+      if (error) {
+        alert('保存失败：' + error.message);
+        return;
+      }
+
+      nicknameEl.textContent = value;
+      closeEditModal();
+    }
+
+    editModal.addEventListener('click', (e) => {
+      if (e.target === editModal) closeEditModal();
+    });
+
+    nicknameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') saveNickname();
+      if (e.key === 'Escape') closeEditModal();
+    });
+
+    function openAvatarPicker() {
+      avatarInput.click();
+    }
+
+    function renderAvatarPreview(dataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        const size = 200;
+        avatarCanvas.width = size;
+        avatarCanvas.height = size;
+
+        const min = Math.min(img.width, img.height);
+        const sx = (img.width - min) / 2;
+        const sy = (img.height - min) / 2;
+
+        avatarCtx.clearRect(0, 0, size, size);
+        avatarCtx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+        pendingAvatarDataUrl = avatarCanvas.toDataURL('image/jpeg', 0.8);
+        avatarModal.classList.add('active');
+      };
+      img.src = dataUrl;
+    }
+
+    avatarInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => renderAvatarPreview(ev.target.result);
+      reader.readAsDataURL(file);
+
+      // Reset input so the same file can be selected again
+      avatarInput.value = '';
+    });
+
+    function closeAvatarModal() {
+      avatarModal.classList.remove('active');
+      pendingAvatarDataUrl = null;
+    }
+
+    async function saveAvatar() {
+      if (!pendingAvatarDataUrl) return;
+
+      try {
+        const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+        if (userError || !user) throw new Error('未登录，无法上传头像');
+
+        const blob = await dataUrlToBlob(pendingAvatarDataUrl);
+
+        const fileName = `${user.id}/${Date.now()}.jpg`;
+        const { error: uploadError } = await supabaseClient.storage
+          .from('avatars')
+          .upload(fileName, blob, {
+            contentType: 'image/jpeg',
+            upsert: true
+          });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabaseClient.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+        const { error: updateError } = await supabaseClient.auth.updateUser({
+          data: { avatar: publicUrl }
+        });
+
+        if (updateError) throw updateError;
+
+        showAvatar(publicUrl);
+        closeAvatarModal();
+      } catch (err) {
+        alert('保存失败：' + (err.message || '未知错误'));
+      }
+    }
+
+    function showAvatar(dataUrl) {
+      if (!dataUrl) return;
+      avatarImg.src = dataUrl;
+      avatarImg.classList.remove('hidden');
+      avatarDefault.classList.add('hidden');
+    }
+
+    avatarModal.addEventListener('click', (e) => {
+      if (e.target === avatarModal) closeAvatarModal();
+    });
+
+    async function logout() {
+      if (!confirm('确定要退出登录吗？')) return;
+      try {
+        await supabaseClient.auth.signOut();
+        location.href = 'index.html';
+      } catch (err) {
+        alert('退出登录失败：' + err.message);
+      }
+    }
+
+    async function loadNickname() {
+      const { data, error } = await supabaseClient.auth.getUser();
+      if (error || !data.user) return;
+      const nickname = data.user.user_metadata?.nickname;
+      if (nickname) {
+        nicknameEl.textContent = nickname;
+      }
+      showAvatar(data.user.user_metadata?.avatar);
+    }
+
+    loadNickname();
+  </script>
+</body>
+</html>

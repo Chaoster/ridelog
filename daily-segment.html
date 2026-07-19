@@ -4,11 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>每日记录 - RideLog</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=7">
   <link rel="icon" type="image/png" href="images/favicon.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
 </head>
-<body>
+<body class="page-no-nav" style="padding-bottom:20px;">
   <!-- Page Header -->
   <div class="page-header">
     <button class="back-btn" onclick="history.back()">&#8249;</button>
@@ -25,7 +27,7 @@
   <!-- Date Picker -->
   <div class="form-group" style="margin-top:16px;">
     <label class="form-label">日期</label>
-    <input type="date" class="form-input" id="date-input">
+    <input type="date" class="form-input" id="date-input" style="max-width:100%;min-width:0;">
   </div>
 
   <!-- Daily Note -->
@@ -67,6 +69,18 @@
     </div>
   </div>
 
+  <!-- Elevation Profile -->
+  <div class="section" id="elevation-section" style="display:none;">
+    <div class="section-title">海拔剖面</div>
+    <div class="elevation-chart-wrap" id="elevation-chart-wrap">
+      <canvas id="elevation-chart"></canvas>
+      <div id="elevation-missing" style="display:none;padding:24px 12px;text-align:center;color:var(--text-secondary);font-size:13px;line-height:1.6;">
+        原始 GPX 未保留逐点海拔数据，无法绘制海拔剖面。<br>
+        可重新上传该 GPX 文件以恢复海拔剖面。
+      </div>
+    </div>
+  </div>
+
   <!-- Today's Stats -->
   <div class="section" id="stats-section" style="display:none;">
     <div class="section-title">今日数据</div>
@@ -87,7 +101,7 @@
   </div>
 
   <!-- Action Buttons -->
-  <div class="action-row" style="margin-top:24px;margin-bottom:32px;">
+  <div class="action-row" style="margin-top:24px;">
     <button class="btn btn-secondary" onclick="history.back()">放弃</button>
     <button class="btn btn-primary" onclick="saveSegment()">保存本日</button>
   </div>
@@ -113,12 +127,19 @@
 
     let photos = [];
     let gpxPoints = [];
+    let rawGpxPoints = [];
+    let gpxDists = [];
     let routeLine = null;
     let photoMarkers = [];
     let startMarker = null;
     let endMarker = null;
+    let hoverMarker = null;
     let pinSize = 36;
     let routeWeight = 4;
+    let currentElevGain = 0;
+    let currentElevLoss = 0;
+    let currentDistance = 0;
+    let currentDurationHours = 0;
 
     // Load journey data (check ongoing first, then completed)
     let journeys = storage.get('ongoingJourneys') || [];
@@ -137,18 +158,21 @@
       document.getElementById('date-input').value = existingSeg.date || '';
       document.getElementById('note-input').value = existingSeg.note || '';
 
-      // Prefill photos
-      if (existingSeg.photoUrls && existingSeg.photoUrls.length > 0) {
+      // Prefill photos — prefer stored photos with GPS data
+      const photoList = (existingSeg.photos && existingSeg.photos.length > 0)
+        ? existingSeg.photos
+        : (existingSeg.photoUrls || []).map(url => ({ url, lat: 0, lng: 0, name: 'photo' }));
+      if (photoList.length > 0) {
         const grid = document.getElementById('photo-grid');
         const addBtn = grid.querySelector('.photo-add');
-        existingSeg.photoUrls.forEach((url, i) => {
-          photos.push({ url, lat: 0, lng: 0, name: 'photo' });
+        photoList.forEach((p, i) => {
+          photos.push({ url: p.url, lat: p.lat || 0, lng: p.lng || 0, name: p.name || 'photo' });
           const div = document.createElement('div');
           div.className = 'photo-item';
           div.dataset.idx = i;
           div.style.position = 'relative';
           div.innerHTML = `
-            <img src="${url}" data-fullscreen="${url}">
+            <img src="${p.url}" data-fullscreen="${p.url}">
             <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:white;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;z-index:2;" onclick="removePhoto(this)">×</div>
           `;
           grid.insertBefore(div, addBtn);
@@ -157,13 +181,28 @@
 
       // Prefill GPX route
       if (existingSeg.gpxPoints && existingSeg.gpxPoints.length > 0) {
-        gpxPoints = existingSeg.gpxPoints;
+        // Normalize stored points: may be old [lat,lon] arrays, [lat,lon,ele] arrays, or {lat,lon,ele} objects
+        gpxPoints = existingSeg.gpxPoints.map(p => {
+          if (Array.isArray(p)) {
+            return [p[0], p[1], p[2] != null ? p[2] : null];
+          }
+          return [p.lat, p.lon, p.ele != null ? p.ele : null];
+        });
+        rawGpxPoints = gpxPoints.map(p => ({ lat: p[0], lon: p[1], ele: p[2] }));
+
+        let totalDist = 0;
+        gpxDists = [0];
+        for (let i = 1; i < rawGpxPoints.length; i++) {
+          totalDist += haversine(rawGpxPoints[i - 1].lat, rawGpxPoints[i - 1].lon, rawGpxPoints[i].lat, rawGpxPoints[i].lon);
+          gpxDists.push(totalDist);
+        }
+
         drawRouteOnMap();
         document.getElementById('gpx-preview').innerHTML = `
           <div class="gpx-file">
             <span class="gpx-icon">&#128220;</span>
             <div>
-              <div class="gpx-name">${existingSeg.distance || '-'} km 路线</div>
+              <div class="gpx-name">${existingSeg.distance > 0 ? Math.round(existingSeg.distance) : '-'} km 路线</div>
               <div style="font-size:12px;color:var(--text-secondary);">${gpxPoints.length} 个轨迹点</div>
             </div>
             <span class="gpx-status">&#10003; 已上传</span>
@@ -173,9 +212,33 @@
         // Show stats and stats values from existing data
         document.getElementById('route-section').style.display = 'block';
         document.getElementById('stats-section').style.display = 'block';
-        document.getElementById('stat-dist').textContent = existingSeg.distance || '-';
-        document.getElementById('stat-elev').textContent = existingSeg.elevation || '-';
+        document.getElementById('stat-dist').textContent = existingSeg.distance > 0 ? Math.round(existingSeg.distance) : '-';
+        document.getElementById('stat-elev').textContent = formatElev(existingSeg.elevation || 0, existingSeg.elevationLoss || 0);
         document.getElementById('stat-time').textContent = existingSeg.duration || '-';
+
+        currentDistance = existingSeg.distance || 0;
+        currentElevGain = existingSeg.elevation || 0;
+        currentElevLoss = existingSeg.elevationLoss || 0;
+
+        const hasEle = rawGpxPoints.some(p => p.ele != null && !isNaN(p.ele));
+        const canvas = document.getElementById('elevation-chart');
+        const missingEl = document.getElementById('elevation-missing');
+        if (hasEle) {
+          document.getElementById('elevation-section').style.display = 'block';
+          canvas.style.display = 'block';
+          missingEl.style.display = 'none';
+          drawElevationChart(rawGpxPoints, gpxDists);
+        } else if (currentElevGain > 0) {
+          // Per-point elevation is missing but summary stat exists; show a note so the section isn't silently absent
+          document.getElementById('elevation-section').style.display = 'block';
+          canvas.style.display = 'none';
+          missingEl.style.display = 'block';
+        } else {
+          document.getElementById('elevation-section').style.display = 'none';
+          canvas.style.display = 'block';
+          missingEl.style.display = 'none';
+        }
+
         setTimeout(() => { map.invalidateSize(); redistributePhotos(); }, 100);
       }
     } else {
@@ -202,6 +265,29 @@
         img.onerror = reject;
         img.src = dataUrl;
       });
+    }
+
+    function randomSuffix() {
+      return Math.random().toString(36).slice(2, 6);
+    }
+
+    async function uploadSegmentPhoto(blob) {
+      const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+      if (userError || !user) throw new Error('未登录，无法上传照片');
+      if (!journeyId) throw new Error('缺少 journeyId');
+
+      const fileName = `${user.id}/${journeyId}/${dayNum}/${Date.now()}_${randomSuffix()}.jpg`;
+      const { error: uploadError } = await supabaseClient.storage
+        .from('segment-photos')
+        .upload(fileName, blob, { contentType: 'image/jpeg' });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabaseClient.storage
+        .from('segment-photos')
+        .getPublicUrl(fileName);
+
+      return publicUrl;
     }
 
     function addPhotoMarker(photo) {
@@ -232,49 +318,57 @@
       if (photos.length === 0) return;
       clearPhotoMarkers();
 
-      const minPx = pinSize * 1.5;
-
-      function isTooClose(lat, lng) {
-        const pt = map.latLngToContainerPoint([lat, lng]);
-        for (const m of photoMarkers) {
-          const mPt = map.latLngToContainerPoint(m.getLatLng());
-          const dx = pt.x - mPt.x, dy = pt.y - mPt.y;
-          if (Math.sqrt(dx * dx + dy * dy) < minPx) return true;
+      // Photos with real GPS: display at exact position, do NOT snap to route
+      photos.forEach(p => {
+        if (p.lat !== 0 || p.lng !== 0) {
+          addPhotoMarker(p);
         }
-        return false;
-      }
+      });
 
-      function findOnRoute(baseIdx) {
-        if (!isTooClose(gpxPoints[baseIdx][0], gpxPoints[baseIdx][1])) {
-          return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
-        }
-        for (let step = 1; step < gpxPoints.length; step++) {
-          for (const dir of [-1, 1]) {
-            const idx = baseIdx + dir * step;
-            if (idx >= 0 && idx < gpxPoints.length) {
-              const lat = gpxPoints[idx][0], lng = gpxPoints[idx][1];
-              if (!isTooClose(lat, lng)) return [lat, lng];
+      // Photos without GPS: fallback — distribute along route
+      const noGpsPhotos = photos.filter(p => p.lat === 0 && p.lng === 0);
+      if (noGpsPhotos.length > 0) {
+        if (gpxPoints.length > 0) {
+          const minPx = pinSize * 1.5;
+          function isTooClose(lat, lng) {
+            const pt = map.latLngToContainerPoint([lat, lng]);
+            for (const m of photoMarkers) {
+              const mPt = map.latLngToContainerPoint(m.getLatLng());
+              const dx = pt.x - mPt.x, dy = pt.y - mPt.y;
+              if (Math.sqrt(dx * dx + dy * dy) < minPx) return true;
             }
+            return false;
           }
+          function findOnRoute(baseIdx) {
+            if (!isTooClose(gpxPoints[baseIdx][0], gpxPoints[baseIdx][1])) {
+              return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
+            }
+            for (let step = 1; step < gpxPoints.length; step++) {
+              for (const dir of [-1, 1]) {
+                const idx = baseIdx + dir * step;
+                if (idx >= 0 && idx < gpxPoints.length) {
+                  const lat = gpxPoints[idx][0], lng = gpxPoints[idx][1];
+                  if (!isTooClose(lat, lng)) return [lat, lng];
+                }
+              }
+            }
+            return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
+          }
+          noGpsPhotos.forEach((p, i) => {
+            const ratio = noGpsPhotos.length <= 1 ? 0 : i / (noGpsPhotos.length - 1);
+            const baseIdx = Math.min(Math.floor(ratio * (gpxPoints.length - 1)), gpxPoints.length - 1);
+            const [lat, lng] = findOnRoute(baseIdx);
+            // Don't mutate original — no-GPS photos keep lat:0, lng:0 for saving
+            addPhotoMarker({ ...p, lat, lng });
+          });
+        } else {
+          const baseLat = 36.95, baseLng = 100.90;
+          noGpsPhotos.forEach((p, i) => {
+            const lat = baseLat + (Math.random() - 0.5) * 0.3;
+            const lng = baseLng + (Math.random() - 0.5) * 0.3;
+            addPhotoMarker({ ...p, lat, lng });
+          });
         }
-        return [gpxPoints[baseIdx][0], gpxPoints[baseIdx][1]];
-      }
-
-      if (gpxPoints.length > 0) {
-        photos.forEach((p, i) => {
-          const ratio = photos.length <= 1 ? 0 : i / (photos.length - 1);
-          const baseIdx = Math.min(Math.floor(ratio * (gpxPoints.length - 1)), gpxPoints.length - 1);
-          const [lat, lng] = findOnRoute(baseIdx);
-          p.lat = lat; p.lng = lng;
-          addPhotoMarker(p);
-        });
-      } else {
-        const baseLat = 36.95, baseLng = 100.90;
-        photos.forEach((p, i) => {
-          p.lat = baseLat + (Math.random() - 0.5) * 0.3;
-          p.lng = baseLng + (Math.random() - 0.5) * 0.3;
-          addPhotoMarker(p);
-        });
       }
 
       if (routeLine) {
@@ -327,6 +421,9 @@
       const grid = document.getElementById('photo-grid');
 
       for (const file of files) {
+        // Read GPS first (from original file, before compression)
+        const gps = await getPhotoGPS(file);
+
         const dataUrl = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (ev) => resolve(ev.target.result);
@@ -334,8 +431,18 @@
           reader.readAsDataURL(file);
         });
 
-        const url = await compressImage(dataUrl, 1200, 0.7);
-        photos.push({ url, lat: 0, lng: 0, name: file.name });
+        const compressedUrl = await compressImage(dataUrl, 1200, 0.7);
+
+        let url = compressedUrl;
+        try {
+          const blob = await dataUrlToBlob(compressedUrl);
+          url = await uploadSegmentPhoto(blob);
+        } catch (err) {
+          console.error('上传照片失败，使用本地 base64:', err);
+          alert('照片上传失败，将临时保存在本地。建议检查网络后重新保存本日记录。');
+        }
+
+        photos.push({ url, lat: gps.lat || 0, lng: gps.lng || 0, name: file.name });
 
         const addBtn = grid.querySelector('.photo-add');
         const div = document.createElement('div');
@@ -407,9 +514,168 @@
       endMarker = L.marker(gpxPoints[gpxPoints.length - 1], { icon: endIcon, zIndexOffset: 1000 }).addTo(map);
     }
 
+    function showHoverMarker(point) {
+      if (!point) return;
+      if (hoverMarker) {
+        hoverMarker.setLatLng([point.lat, point.lon]);
+      } else {
+        hoverMarker = L.circleMarker([point.lat, point.lon], {
+          radius: 6,
+          fillColor: '#FF7B3D',
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.9
+        }).addTo(map);
+      }
+    }
+
+    function hideHoverMarker() {
+      if (hoverMarker) {
+        map.removeLayer(hoverMarker);
+        hoverMarker = null;
+      }
+    }
+
+    function drawElevationChart(points, dists) {
+      const canvas = document.getElementById('elevation-chart');
+      const missingEl = document.getElementById('elevation-missing');
+      if (missingEl) missingEl.style.display = 'none';
+      canvas.style.display = 'block';
+      const wrap = canvas.parentElement;
+      const dpr = window.devicePixelRatio || 1;
+      const width = wrap.clientWidth - 24;
+      const height = 180;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const pad = { top: 20, right: 10, bottom: 28, left: 44 };
+      const chartW = width - pad.left - pad.right;
+      const chartH = height - pad.top - pad.bottom;
+
+      const eles = points.map(p => p.ele).filter(e => e != null);
+      if (eles.length === 0) {
+        document.getElementById('elevation-section').style.display = 'none';
+        return;
+      }
+
+      const minEle = Math.min(...eles);
+      const maxEle = Math.max(...eles);
+      const eleRange = Math.max(maxEle - minEle, 1);
+      const maxDist = dists[dists.length - 1] || 0;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Grid lines
+      ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.top + (chartH / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + chartW, y);
+        ctx.stroke();
+      }
+
+      // Elevation area
+      const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + chartH);
+      gradient.addColorStop(0, 'rgba(255,123,61,0.35)');
+      gradient.addColorStop(1, 'rgba(255,123,61,0.05)');
+
+      ctx.beginPath();
+      ctx.moveTo(pad.left, pad.top + chartH);
+      points.forEach((p, i) => {
+        if (p.ele == null) return;
+        const x = pad.left + (maxDist > 0 ? (dists[i] / maxDist) * chartW : 0);
+        const y = pad.top + chartH - ((p.ele - minEle) / eleRange) * chartH;
+        ctx.lineTo(x, y);
+      });
+      ctx.lineTo(pad.left + chartW, pad.top + chartH);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // Elevation line
+      ctx.beginPath();
+      ctx.strokeStyle = '#FF7B3D';
+      ctx.lineWidth = 2;
+      let started = false;
+      points.forEach((p, i) => {
+        if (p.ele == null) return;
+        const x = pad.left + (maxDist > 0 ? (dists[i] / maxDist) * chartW : 0);
+        const y = pad.top + chartH - ((p.ele - minEle) / eleRange) * chartH;
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+
+      // Y-axis labels (elevation)
+      ctx.fillStyle = 'var(--text-secondary)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (let i = 0; i <= 4; i++) {
+        const val = minEle + (eleRange / 4) * (4 - i);
+        const y = pad.top + (chartH / 4) * i;
+        ctx.fillText(Math.round(val) + 'm', pad.left - 8, y);
+      }
+
+      // X-axis labels (distance)
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (let i = 0; i <= 4; i++) {
+        const val = (maxDist / 4) * i;
+        const x = pad.left + (chartW / 4) * i;
+        ctx.fillText(Math.round(val) + 'km', x, pad.top + chartH + 8);
+      }
+
+      // Interaction: hover/touch on chart to highlight map position
+      function handleChartMove(clientX) {
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        if (x < pad.left || x > width - pad.right) return;
+        const ratio = (x - pad.left) / chartW;
+        const idx = Math.min(points.length - 1, Math.max(0, Math.round(ratio * (points.length - 1))));
+        showHoverMarker(points[idx]);
+      }
+
+      canvas.onmousemove = (e) => handleChartMove(e.clientX);
+      canvas.ontouchmove = (e) => {
+        e.preventDefault();
+        if (e.touches.length > 0) handleChartMove(e.touches[0].clientX);
+      };
+      canvas.onmouseleave = () => hideHoverMarker();
+      canvas.ontouchend = () => hideHoverMarker();
+      canvas.ontouchcancel = () => hideHoverMarker();
+    }
+
+    function formatElev(gain, loss) {
+      return gain > 0 ? `↑${Math.round(gain)}` : '-';
+    }
+
+    function formatDuration(hours) {
+      if (!hours) return '';
+      const h = Math.floor(hours);
+      const m = Math.round((hours - h) * 60);
+      if (h > 0 && m > 0) return `${h}h${m}m`;
+      if (h > 0) return `${h}h`;
+      return `${m}m`;
+    }
+
     function handleGPX(e) {
       const file = e.target.files[0];
       if (!file) return;
+
+      hideHoverMarker();
 
       const reader = new FileReader();
       reader.onload = (ev) => {
@@ -419,21 +685,35 @@
           return;
         }
 
-        gpxPoints = rawPoints.map(p => [p.lat, p.lon]);
+        gpxPoints = rawPoints.map(p => [p.lat, p.lon, p.ele]);
+        rawGpxPoints = rawPoints;
 
         let totalDist = 0;
+        const dists = [0];
         for (let i = 1; i < rawPoints.length; i++) {
           totalDist += haversine(rawPoints[i - 1].lat, rawPoints[i - 1].lon, rawPoints[i].lat, rawPoints[i].lon);
+          dists.push(totalDist);
         }
+        gpxDists = dists;
 
         let totalElev = 0;
+        let totalElevLoss = 0;
         for (let i = 1; i < rawPoints.length; i++) {
           const prev = rawPoints[i - 1].ele;
           const curr = rawPoints[i].ele;
-          if (prev != null && curr != null && curr > prev) {
-            totalElev += (curr - prev);
+          if (prev != null && curr != null) {
+            const diff = curr - prev;
+            if (diff > 0) {
+              totalElev += diff;
+            } else if (diff < 0) {
+              totalElevLoss += Math.abs(diff);
+            }
           }
         }
+
+        currentDistance = totalDist;
+        currentElevGain = totalElev;
+        currentElevLoss = totalElevLoss;
 
         let durationHours = 0;
         const times = rawPoints.filter(p => p.time).map(p => p.time.getTime());
@@ -444,16 +724,22 @@
         if (durationHours === 0 && totalDist > 0) {
           durationHours = totalDist / 20;
         }
+        currentDurationHours = durationHours;
 
         drawRouteOnMap();
 
         document.getElementById('route-section').style.display = 'block';
+        document.getElementById('elevation-section').style.display = 'block';
         document.getElementById('stats-section').style.display = 'block';
 
         setTimeout(() => {
           map.invalidateSize();
           map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
         }, 50);
+
+        drawElevationChart(rawPoints, dists);
+        document.getElementById('elevation-chart').style.display = 'block';
+        document.getElementById('elevation-missing').style.display = 'none';
 
         document.getElementById('gpx-preview').innerHTML = `
           <div class="gpx-file">
@@ -466,8 +752,8 @@
           </div>
         `;
 
-        document.getElementById('stat-dist').textContent = totalDist.toFixed(1);
-        document.getElementById('stat-elev').textContent = Math.round(totalElev);
+        document.getElementById('stat-dist').textContent = Math.round(totalDist);
+        document.getElementById('stat-elev').textContent = formatElev(totalElev, totalElevLoss);
 
         const h = Math.floor(durationHours);
         const m = Math.round((durationHours - h) * 60);
@@ -491,9 +777,6 @@
         return;
       }
 
-      const distVal = document.getElementById('stat-dist').textContent;
-      const elevVal = document.getElementById('stat-elev').textContent;
-      const timeVal = document.getElementById('stat-time').textContent;
       const segmentData = {
         day: parseInt(dayNum),
         date: date,
@@ -503,9 +786,10 @@
         photoUrls: photos.map(p => p.url),
         gpx: gpxPoints.length > 0,
         gpxPoints: gpxPoints,
-        distance: distVal === '-' ? 0 : parseFloat(distVal) || 0,
-        elevation: elevVal === '-' ? 0 : parseFloat(elevVal) || 0,
-        duration: timeVal === '-' ? '' : timeVal
+        distance: Math.round(currentDistance) || 0,
+        elevation: Math.round(currentElevGain) || 0,
+        elevationLoss: Math.round(currentElevLoss) || 0,
+        duration: formatDuration(currentDurationHours)
       };
 
       let journeys = storage.get('ongoingJourneys') || [];
