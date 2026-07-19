@@ -71,7 +71,7 @@
         completed = storage.get('completedJourneys') || [];
       }
 
-      const myJourneys = [...ongoing, ...completed];
+      const myJourneys = [...completed];
       const allFeedJourneys = [...myJourneys, ...publicJourneys.filter(pj => !myJourneys.some(mj => mj.id === pj.id))];
 
       const container = document.getElementById('feed-container');
