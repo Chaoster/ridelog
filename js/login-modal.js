@@ -96,7 +96,10 @@
       sendCodeBtn.disabled = true;
       sendCodeBtn.classList.add('btn-loading');
       try {
-        const { error } = await supabaseClient.auth.signInWithOtp({ email });
+        const { error } = await supabaseClient.auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: true }
+        });
         if (error) throw error;
         startCountdown();
         showError('验证码已发送，请查收邮箱');
@@ -129,7 +132,7 @@
         const { error } = await supabaseClient.auth.verifyOtp({
           email,
           token: code,
-          type: 'magiclink'
+          type: 'email'
         });
         if (error) throw error;
 
