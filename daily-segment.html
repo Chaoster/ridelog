@@ -108,6 +108,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/journey-service.js"></script>
   <script>
     const urlParams = new URLSearchParams(location.search);
     const dayNum = urlParams.get('day') || '1';
@@ -141,14 +142,34 @@
     let currentDistance = 0;
     let currentDurationHours = 0;
 
-    // Load journey data (check ongoing first, then completed)
-    let journeys = storage.get('ongoingJourneys') || [];
-    let journey = journeys.find(j => j.id === journeyId);
-    if (!journey) {
-      journeys = storage.get('completedJourneys') || [];
-      journey = journeys.find(j => j.id === journeyId);
-    }
+    // Load journey data
+    let journey = null;
     let existingSeg = null;
+
+    async function loadJourney() {
+      if (!journeyId) {
+        alert('缺少 journeyId');
+        location.href = 'my-records.html';
+        return;
+      }
+
+      try {
+        journey = await window.journeyService.getJourney(journeyId);
+      } catch (err) {
+        console.error('[daily-segment] load journey error:', err);
+      }
+
+      if (!journey) {
+        alert('旅程不存在');
+        location.href = 'my-records.html';
+        return;
+      }
+
+      if (journey.title) {
+        document.getElementById('journey-name').textContent = journey.title;
+      }
+
+      if (isEdit && editIdx >= 0 && journey.segments && journey.segments[editIdx]) {
 
     if (isEdit && editIdx >= 0 && journey && journey.segments && journey.segments[editIdx]) {
       existingSeg = journey.segments[editIdx];
@@ -241,10 +262,11 @@
 
         setTimeout(() => { map.invalidateSize(); redistributePhotos(); }, 100);
       }
-    } else {
-      // Set today's date for new segment
-      document.getElementById('date-input').valueAsDate = new Date();
+
+      redistributePhotos();
     }
+
+    loadJourney();
 
     function compressImage(dataUrl, maxWidth = 1200, quality = 0.7) {
       return new Promise((resolve, reject) => {
@@ -768,7 +790,7 @@
       reader.readAsText(file);
     }
 
-    function saveSegment() {
+    async function saveSegment() {
       const date = document.getElementById('date-input').value;
       const note = document.getElementById('note-input').value;
 
@@ -792,39 +814,14 @@
         duration: formatDuration(currentDurationHours)
       };
 
-      let journeys = storage.get('ongoingJourneys') || [];
-      let idx = journeys.findIndex(j => j.id === journeyId);
-      let storageKey = 'ongoingJourneys';
-      let isCompleted = false;
-
-      if (idx < 0) {
-        journeys = storage.get('completedJourneys') || [];
-        idx = journeys.findIndex(j => j.id === journeyId);
-        storageKey = 'completedJourneys';
-        isCompleted = true;
+      try {
+        const updated = await window.journeyService.saveSegment(journeyId, segmentData, isEdit ? editIdx : -1);
+        const isCompleted = updated.status === 'completed';
+        location.href = isCompleted ? `journey-detail.html?id=${journeyId}&from=records` : `ongoing.html?id=${journeyId}`;
+      } catch (err) {
+        console.error('[daily-segment] save segment error:', err);
+        alert('保存失败：' + err.message);
       }
-
-      if (idx < 0) {
-        alert('旅程不存在');
-        return;
-      }
-
-      if (!journeys[idx].segments) journeys[idx].segments = [];
-
-      if (isEdit && editIdx >= 0) {
-        // Update existing segment
-        journeys[idx].segments[editIdx] = segmentData;
-      } else {
-        // Append new segment
-        journeys[idx].segments.push(segmentData);
-      }
-
-      const ok = storage.set(storageKey, journeys);
-      if (!ok) {
-        alert('保存失败：数据过大（照片可能太多）。\n\n建议：\n1. 减少照片数量\n2. 或使用更小尺寸的照片');
-        return;
-      }
-      location.href = isCompleted ? `journey-detail.html?id=${journeyId}&from=records` : `ongoing.html?id=${journeyId}`;
     }
   </script>
 </body>

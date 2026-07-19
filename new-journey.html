@@ -6,6 +6,9 @@
   <title>开始新旅程 - RideLog</title>
   <link rel="stylesheet" href="css/style.css?v=7">
   <link rel="icon" type="image/png" href="images/favicon.png">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/login-modal.js"></script>
 </head>
 <body class="page-no-nav" style="padding-bottom:20px;">
   <!-- Page Header -->
@@ -28,28 +31,31 @@
   </div>
 
   <script src="js/app.js"></script>
+  <script src="js/journey-service.js"></script>
   <script>
-    function createJourney() {
+    async function createJourney() {
+      if (!(await window.journeyService.isLoggedIn())) {
+        window.requireAuth(async () => {
+          await doCreateJourney();
+        });
+        return;
+      }
+      await doCreateJourney();
+    }
+
+    async function doCreateJourney() {
       const title = document.getElementById('journey-title').value.trim();
       if (!title) {
         alert('请填写旅程标题');
         return;
       }
 
-      const journey = {
-        id: 'j_' + Date.now(),
-        title: title,
-        createdAt: new Date().toISOString().split('T')[0],
-        segments: []
-      };
-
-      // Save to ongoing journeys
-      let ongoing = storage.get('ongoingJourneys') || [];
-      ongoing.unshift(journey);
-      storage.set('ongoingJourneys', ongoing);
-
-      // Go back to records page
-      location.href = 'my-records.html';
+      try {
+        const journey = await window.journeyService.createJourney(title);
+        location.href = 'my-records.html';
+      } catch (err) {
+        alert('创建失败：' + err.message);
+      }
     }
   </script>
 </body>

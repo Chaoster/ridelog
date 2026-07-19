@@ -6,6 +6,9 @@
   <title>旅程进行中 - RideLog</title>
   <link rel="stylesheet" href="css/style.css?v=7">
   <link rel="icon" type="image/png" href="images/favicon.png">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/login-modal.js"></script>
 </head>
 <body class="page-no-nav" style="padding-bottom:20px;">
   <!-- Page Header -->
@@ -70,6 +73,7 @@
   </div>
 
   <script src="js/app.js"></script>
+  <script src="js/journey-service.js"></script>
   <script>
     const urlParams = new URLSearchParams(location.search);
     const journeyId = urlParams.get('id');
@@ -83,18 +87,31 @@
       }
     }
 
-    // Load journey from storage
-    let journeys = storage.get('ongoingJourneys') || [];
-    let journey = journeys.find(j => j.id === journeyId);
+    let journey = null;
 
-    if (!journey) {
-      alert('旅程不存在');
-      location.href = 'my-records.html';
+    async function loadJourney() {
+      if (!journeyId) {
+        alert('缺少旅程 ID');
+        location.href = 'my-records.html';
+        return;
+      }
+
+      try {
+        journey = await window.journeyService.getJourney(journeyId);
+      } catch (err) {
+        console.error('[ongoing] load journey error:', err);
+      }
+
+      if (!journey) {
+        alert('旅程不存在');
+        location.href = 'my-records.html';
+        return;
+      }
+
+      document.getElementById('journey-title').textContent = journey.title;
+      document.getElementById('journey-meta').textContent = `创建于 ${journey.createdAt}`;
+      renderSegments();
     }
-
-    // Update UI
-    document.getElementById('journey-title').textContent = journey.title;
-    document.getElementById('journey-meta').textContent = `创建于 ${journey.createdAt}`;
 
     // Generate SVG route snapshot from GPX points with map-like background
     function generateRouteSvg(gpxPoints, size = 100) {
@@ -263,15 +280,15 @@
       }).join('');
     }
 
-    renderSegments();
+    loadJourney();
 
     function addSegment() {
-      const nextDay = (journey.segments || []).length + 1;
+      const nextDay = (journey?.segments || []).length + 1;
       location.href = `daily-segment.html?day=${nextDay}&journeyId=${journey.id}&journey=${encodeURIComponent(journey.title)}`;
     }
 
     function endJourney() {
-      const segs = journey.segments || [];
+      const segs = journey?.segments || [];
       if (segs.length === 0) {
         alert('至少添加一天的记录才能结束旅程');
         return;
@@ -279,21 +296,16 @@
       document.getElementById('end-modal').classList.add('active');
     }
 
-    function confirmEndJourney() {
+    async function confirmEndJourney() {
       document.getElementById('end-modal').classList.remove('active');
 
-      // Move from ongoing to completed
-      let ongoing = storage.get('ongoingJourneys') || [];
-      ongoing = ongoing.filter(j => j.id !== journeyId);
-      storage.set('ongoingJourneys', ongoing);
-
-      let completed = storage.get('completedJourneys') || [];
-      journey.completedAt = new Date().toISOString().split('T')[0];
-      completed.unshift(journey);
-      storage.set('completedJourneys', completed);
-
-      alert('旅程已结束！正在生成旅行日志...');
-      location.href = `journey-detail.html?id=${journeyId}&completed=1&from=records`;
+      try {
+        await window.journeyService.endJourney(journeyId);
+        alert('旅程已结束！正在生成旅行日志...');
+        location.href = `journey-detail.html?id=${journeyId}&completed=1&from=records`;
+      } catch (err) {
+        alert('结束旅程失败：' + err.message);
+      }
     }
   </script>
 </body>

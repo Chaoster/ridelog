@@ -4,12 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>旅程总结 - RideLog</title>
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css">
   <link rel="icon" type="image/png" href="images/favicon.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-config.js"></script>
-  <script src="js/login-modal.js"></script>
   <style>
     .route-path {
       stroke-dasharray: 10;
@@ -20,7 +17,7 @@
     }
   </style>
 </head>
-<body class="page-no-nav" style="padding-bottom:20px;">
+<body>
   <!-- Page Header -->
   <div class="page-header">
     <button class="back-btn" onclick="goBack()">&#8249;</button>
@@ -87,15 +84,6 @@
     </div>
   </div>
 
-  <!-- Elevation Profile -->
-  <div class="section" id="elevation-section" style="display:none;">
-    <div class="section-title">海拔剖面</div>
-    <div class="elevation-chart-wrap">
-      <canvas id="elevation-chart"></canvas>
-    </div>
-    <div id="elevation-note" style="font-size:12px;color:var(--text-secondary);padding:8px 20px 0;"></div>
-  </div>
-
   <!-- Journey Story -->
   <div class="section">
     <div class="section-title">旅行日志</div>
@@ -103,7 +91,7 @@
   </div>
 
   <!-- Route Info -->
-  <div class="section">
+  <div class="section" style="margin-bottom:32px;">
     <div class="section-title">行程概览</div>
     <div style="margin:0 20px;background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);">
       <div id="route-summary" style="font-size:14px;color:var(--text-secondary);line-height:1.8;"></div>
@@ -112,6 +100,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/journey-service.js"></script>
   <script>
     const urlParams = new URLSearchParams(location.search);
     const journeyId = urlParams.get('id') || '1';
@@ -125,74 +114,74 @@
       }
     }
 
-    // Find journey data: first check completed journeys in localStorage, then sample data
-    let journey = null;
-    let isUserJourney = false;
-
-    const completedJourneys = storage.get('completedJourneys') || [];
-    const ongoingJourneys = storage.get('ongoingJourneys') || [];
-    journey = completedJourneys.find(j => j.id === journeyId) || ongoingJourneys.find(j => j.id === journeyId);
-
-    if (journey) {
-      isUserJourney = true;
-    } else {
-      journey = SAMPLE_JOURNEYS.find(j => j.id == journeyId);
-      if (!journey) {
-        alert('旅程不存在');
-        location.href = 'my-records.html';
-        throw new Error('Journey not found');
-      }
-    }
-
-    // Normalize data
-    const segs = journey.segments || [];
-    const totalDays = segs.length;
-    const totalDist = segs.reduce((s, seg) => s + (parseFloat(seg.distance) || 0), 0);
-    const totalElev = segs.reduce((s, seg) => s + (parseFloat(seg.elevation) || 0), 0);
-
-    console.log('journey loaded:', isUserJourney ? 'user' : 'sample', 'segments:', segs.length);
-
-    // Render edit/delete buttons for user journeys
-    if (isUserJourney) {
-      document.getElementById('header-actions').innerHTML = `
-        <button style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="editTitle()">编辑标题</button>
-        <button style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteModal()">删除</button>
-      `;
-    }
-
-    function editTitle() {
+    // Expose handlers used in inline onclick attributes
+    window.editTitle = async function () {
       const newTitle = prompt('修改旅程标题:', journey.title);
       if (newTitle && newTitle.trim()) {
         journey.title = newTitle.trim();
         document.getElementById('detail-title').textContent = journey.title;
-        // Save back to localStorage
-        const list = completedJourneys.find(j => j.id === journeyId) ? completedJourneys : ongoingJourneys;
-        const idx = list.findIndex(j => j.id === journeyId);
-        if (idx >= 0) {
-          list[idx] = journey;
-          const key = completedJourneys.find(j => j.id === journeyId) ? 'completedJourneys' : 'ongoingJourneys';
-          storage.set(key, list);
+        try {
+          await window.journeyService.updateJourney(journey);
+        } catch (err) {
+          console.error('[journey-detail] update title error:', err);
+          alert('保存失败：' + err.message);
         }
       }
-    }
+    };
 
-    function showDeleteModal() {
+    window.showDeleteModal = function () {
       const el = document.getElementById('delete-modal');
       if (el) el.classList.add('active');
-    }
+    };
 
-    function confirmDelete() {
+    window.confirmDelete = async function () {
       document.getElementById('delete-modal').classList.remove('active');
-      // Remove from completed
-      let completed = storage.get('completedJourneys') || [];
-      completed = completed.filter(j => j.id !== journeyId);
-      storage.set('completedJourneys', completed);
-      // Remove from ongoing (just in case)
-      let ongoing = storage.get('ongoingJourneys') || [];
-      ongoing = ongoing.filter(j => j.id !== journeyId);
-      storage.set('ongoingJourneys', ongoing);
-      location.href = 'my-records.html';
-    }
+      try {
+        await window.journeyService.deleteJourney(journeyId);
+        location.href = 'my-records.html';
+      } catch (err) {
+        console.error('[journey-detail] delete error:', err);
+        alert('删除失败：' + err.message);
+      }
+    };
+
+    let journey = null;
+    let isUserJourney = false;
+
+    (async function () {
+      // Load journey data
+      try {
+        journey = await window.journeyService.getJourney(journeyId);
+      } catch (err) {
+        console.error('[journey-detail] load journey error:', err);
+      }
+
+      if (journey) {
+        isUserJourney = true;
+      } else {
+        journey = SAMPLE_JOURNEYS.find(j => j.id == journeyId);
+        if (!journey) {
+          alert('旅程不存在');
+          location.href = 'my-records.html';
+          throw new Error('Journey not found');
+        }
+      }
+
+      // Normalize data
+      const segs = journey.segments || [];
+      const totalDays = segs.length;
+      const totalDist = segs.reduce((s, seg) => s + (parseFloat(seg.distance) || 0), 0);
+      const totalElev = segs.reduce((s, seg) => s + (parseFloat(seg.elevation) || 0), 0);
+
+      console.log('journey loaded:', isUserJourney ? 'user' : 'sample', 'segments:', segs.length);
+
+      // Render edit/delete buttons for user journeys
+      if (isUserJourney) {
+        document.getElementById('header-actions').innerHTML = `
+          <button style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="editTitle()">编辑标题</button>
+          <button style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteModal()">删除</button>
+        `;
+      }
 
     // Route colors
     const colors = ['#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
@@ -322,20 +311,15 @@
     }
 
     document.getElementById('stat-days').textContent = totalDays;
-    document.getElementById('stat-distance').textContent = totalDist > 0 ? Math.round(totalDist) : '-';
+    document.getElementById('stat-distance').textContent = totalDist > 0 ? totalDist.toFixed(1) : '-';
     document.getElementById('stat-elev').textContent = totalElev > 0 ? Math.round(totalElev) : '-';
 
     // Init map
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    const map = L.map('map', {
-      scrollWheelZoom: false,
-      dragging: !isTouchDevice
-    });
+    const map = L.map('map');
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    let hoverMarker = null;
     let allPoints = [];
     let allPhotoMarkers = [];
 
@@ -488,14 +472,7 @@
       map.setView([36.95, 100.90], 10);
     }
 
-    renderCombinedElevationProfile();
-
     function downloadCombinedGPX() {
-      if (!window.currentUser) {
-        requireAuth(downloadCombinedGPX);
-        return;
-      }
-
       const segs = journey.segments || [];
       const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
       if (!hasGpx) {
@@ -561,257 +538,6 @@
       setTimeout(() => map.invalidateSize(), 100);
     }
 
-    function haversine(lat1, lon1, lat2, lon2) {
-      const R = 6371;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
-    function hexToRgba(hex, alpha) {
-      const clean = hex.replace('#', '');
-      const bigint = parseInt(clean, 16);
-      const r = (bigint >> 16) & 255;
-      const g = (bigint >> 8) & 255;
-      const b = bigint & 255;
-      return `rgba(${r},${g},${b},${alpha})`;
-    }
-
-    function showHoverMarker(lat, lon) {
-      if (hoverMarker) {
-        hoverMarker.setLatLng([lat, lon]);
-      } else {
-        hoverMarker = L.circleMarker([lat, lon], {
-          radius: 6,
-          fillColor: '#FF7B3D',
-          color: '#fff',
-          weight: 2,
-          opacity: 1,
-          fillOpacity: 0.9
-        }).addTo(map);
-      }
-    }
-
-    function hideHoverMarker() {
-      if (hoverMarker) {
-        map.removeLayer(hoverMarker);
-        hoverMarker = null;
-      }
-    }
-
-    function drawElevationChart(points, dists) {
-      const canvas = document.getElementById('elevation-chart');
-      const wrap = canvas.parentElement;
-      const dpr = window.devicePixelRatio || 1;
-      const width = wrap.clientWidth - 24;
-      const height = 180;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      canvas.style.width = width + 'px';
-      canvas.style.height = height + 'px';
-
-      const ctx = canvas.getContext('2d');
-      ctx.scale(dpr, dpr);
-
-      const pad = { top: 26, right: 10, bottom: 28, left: 44 };
-      const chartW = width - pad.left - pad.right;
-      const chartH = height - pad.top - pad.bottom;
-
-      const eles = points.map(p => p.ele).filter(e => e != null);
-      if (eles.length === 0) return;
-
-      const minEle = Math.min(...eles);
-      const maxEle = Math.max(...eles);
-      const eleRange = Math.max(maxEle - minEle, 1);
-      const maxDist = dists[dists.length - 1] || 0;
-      const distToX = (dist) => pad.left + (maxDist > 0 ? (dist / maxDist) * chartW : 0);
-
-      ctx.clearRect(0, 0, width, height);
-
-      // Build day ranges from points (using segIdx)
-      const dayRanges = [];
-      let currentSegIdx = points[0] ? points[0].segIdx : -1;
-      let currentStart = 0;
-      points.forEach((p, i) => {
-        if (p.segIdx !== currentSegIdx) {
-          dayRanges.push({ segIdx: currentSegIdx, startIdx: currentStart, endIdx: i - 1 });
-          currentSegIdx = p.segIdx;
-          currentStart = i;
-        }
-      });
-      if (points.length > 0) {
-        dayRanges.push({ segIdx: currentSegIdx, startIdx: currentStart, endIdx: points.length - 1 });
-      }
-
-      // Grid lines
-      ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= 4; i++) {
-        const y = pad.top + (chartH / 4) * i;
-        ctx.beginPath();
-        ctx.moveTo(pad.left, y);
-        ctx.lineTo(pad.left + chartW, y);
-        ctx.stroke();
-      }
-
-      // Day boundary lines
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      dayRanges.slice(1).forEach(r => {
-        const x = distToX(dists[r.startIdx]);
-        ctx.beginPath();
-        ctx.moveTo(x, pad.top);
-        ctx.lineTo(x, pad.top + chartH);
-        ctx.stroke();
-      });
-      ctx.setLineDash([]);
-
-      // Draw each day's area and line with its own color
-      dayRanges.forEach(r => {
-        const color = colors[r.segIdx % colors.length];
-        const dayPoints = [];
-        for (let i = r.startIdx; i <= r.endIdx; i++) {
-          if (points[i].ele != null) dayPoints.push(points[i]);
-        }
-        if (dayPoints.length === 0) return;
-
-        const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + chartH);
-        gradient.addColorStop(0, hexToRgba(color, 0.35));
-        gradient.addColorStop(1, hexToRgba(color, 0.05));
-
-        const startDist = dists[r.startIdx];
-        const endDist = dists[r.endIdx];
-
-        // Area fill
-        ctx.beginPath();
-        ctx.moveTo(distToX(startDist), pad.top + chartH);
-        dayPoints.forEach(p => {
-          const x = distToX(p.dist);
-          const y = pad.top + chartH - ((p.ele - minEle) / eleRange) * chartH;
-          ctx.lineTo(x, y);
-        });
-        ctx.lineTo(distToX(endDist), pad.top + chartH);
-        ctx.closePath();
-        ctx.fillStyle = gradient;
-        ctx.fill();
-
-        // Line
-        ctx.beginPath();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        let started = false;
-        dayPoints.forEach(p => {
-          const x = distToX(p.dist);
-          const y = pad.top + chartH - ((p.ele - minEle) / eleRange) * chartH;
-          if (!started) {
-            ctx.moveTo(x, y);
-            started = true;
-          } else {
-            ctx.lineTo(x, y);
-          }
-        });
-        ctx.stroke();
-      });
-
-      // Day labels
-      ctx.fillStyle = 'var(--text-secondary)';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      dayRanges.forEach(r => {
-        const startDist = dists[r.startIdx];
-        const endDist = dists[r.endIdx];
-        const x = distToX((startDist + endDist) / 2);
-        const dayNum = segs[r.segIdx] ? segs[r.segIdx].day : (r.segIdx + 1);
-        ctx.fillText(`Day ${dayNum}`, x, pad.top - 6);
-      });
-
-      // Y-axis labels (elevation)
-      ctx.fillStyle = 'var(--text-secondary)';
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      for (let i = 0; i <= 4; i++) {
-        const val = minEle + (eleRange / 4) * (4 - i);
-        const y = pad.top + (chartH / 4) * i;
-        ctx.fillText(Math.round(val) + 'm', pad.left - 8, y);
-      }
-
-      // X-axis labels (distance)
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      for (let i = 0; i <= 4; i++) {
-        const val = (maxDist / 4) * i;
-        const x = pad.left + (chartW / 4) * i;
-        ctx.fillText(Math.round(val) + 'km', x, pad.top + chartH + 8);
-      }
-
-      function handleChartMove(clientX) {
-        const rect = canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        if (x < pad.left || x > width - pad.right) return;
-        const ratio = (x - pad.left) / chartW;
-        const idx = Math.min(points.length - 1, Math.max(0, Math.round(ratio * (points.length - 1))));
-        showHoverMarker(points[idx].lat, points[idx].lon);
-      }
-
-      canvas.onmousemove = (e) => handleChartMove(e.clientX);
-      canvas.ontouchmove = (e) => {
-        e.preventDefault();
-        if (e.touches.length > 0) handleChartMove(e.touches[0].clientX);
-      };
-      canvas.onmouseleave = () => hideHoverMarker();
-      canvas.ontouchend = () => hideHoverMarker();
-      canvas.ontouchcancel = () => hideHoverMarker();
-    }
-
-    function renderCombinedElevationProfile() {
-      const profilePoints = [];
-      let cumulativeDist = 0;
-      const missingEleDays = [];
-
-      if (isUserJourney) {
-        segs.forEach((seg, segIdx) => {
-          if (!seg.gpxPoints || seg.gpxPoints.length === 0) return;
-          const segHasEle = seg.gpxPoints.some(pt => pt[2] != null);
-          if (!segHasEle) missingEleDays.push(seg.day);
-          seg.gpxPoints.forEach((pt, i) => {
-            const lat = pt[0];
-            const lon = pt[1];
-            const ele = pt[2] != null ? pt[2] : null;
-            if (i > 0) {
-              const prev = seg.gpxPoints[i - 1];
-              cumulativeDist += haversine(prev[0], prev[1], lat, lon);
-            }
-            profilePoints.push({ lat, lon, ele, dist: cumulativeDist, segIdx });
-          });
-        });
-      }
-
-      const noteEl = document.getElementById('elevation-note');
-      if (noteEl) {
-        if (missingEleDays.length > 0) {
-          noteEl.textContent = `以下日期的 GPX 未包含海拔数据，海拔剖面中未显示：Day ${missingEleDays.join('、Day ')}`;
-          noteEl.style.display = 'block';
-        } else {
-          noteEl.style.display = 'none';
-        }
-      }
-
-      if (profilePoints.length === 0) return;
-
-      const hasEle = profilePoints.some(p => p.ele != null);
-      if (!hasEle) return;
-
-      const dists = profilePoints.map(p => p.dist);
-      document.getElementById('elevation-section').style.display = 'block';
-      drawElevationChart(profilePoints, dists);
-    }
-
     // Render journey story
     const storyEl = document.getElementById('journey-story');
     if (isUserJourney) {
@@ -831,8 +557,8 @@
             </div>
           ` : ''}
           <div style="margin-top:10px;font-size:13px;color:var(--text-secondary);">
-            ${seg.distance ? `里程: ${Math.round(seg.distance)} km` : ''}
-            ${seg.elevation ? `· 爬升: ${Math.round(seg.elevation)} m` : ''}
+            ${seg.distance ? `里程: ${seg.distance} km` : ''}
+            ${seg.elevation ? `· 爬升: ${seg.elevation} m` : ''}
             ${seg.duration ? `· 用时: ${seg.duration}` : ''}
           </div>
         </div>
@@ -842,7 +568,7 @@
       document.getElementById('route-summary').innerHTML = `
         本次旅程 <strong>${journey.title}</strong>，
         共 ${totalDays} 天，
-        总里程 ${totalDist > 0 ? Math.round(totalDist) : '-'} km，
+        总里程 ${totalDist > 0 ? totalDist.toFixed(1) : '-'} km，
         总爬升 ${totalElev > 0 ? Math.round(totalElev) : '-'} m。
       `;
     } else {
@@ -860,7 +586,7 @@
             </div>
           ` : ''}
           <div style="margin-top:10px;font-size:13px;color:var(--text-secondary);">
-            今日里程: ${Math.round(seg.distance)} km
+            今日里程: ${seg.distance} km
             ${seg.gpxFile ? `· GPX: ${seg.gpxFile}` : ''}
           </div>
         </div>
@@ -870,10 +596,11 @@
       document.getElementById('route-summary').innerHTML = `
         从 <strong>${journey.start}</strong> 出发，
         经 ${journey.days} 天骑行，
-        总里程 ${Math.round(journey.distance)} km，
+        总里程 ${journey.distance} km，
         最终抵达 <strong>${journey.end}</strong>。
       `;
     }
+  })();
   </script>
 </body>
 </html>

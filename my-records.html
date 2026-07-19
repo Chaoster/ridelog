@@ -95,6 +95,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/journey-service.js"></script>
   <script>
     const colors = ['#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
 
@@ -108,9 +109,25 @@
       return urls[hash % urls.length];
     }
 
-    function renderRecords() {
-      const ongoing = storage.get('ongoingJourneys') || [];
-      const completed = storage.get('completedJourneys') || [];
+    async function renderRecords() {
+      let ongoing = [];
+      let completed = [];
+      try {
+        if (await window.journeyService.isLoggedIn()) {
+          await window.journeyService.migrateLocalStorage();
+          [ongoing, completed] = await Promise.all([
+            window.journeyService.getJourneys({ status: 'ongoing' }),
+            window.journeyService.getJourneys({ status: 'completed' })
+          ]);
+        } else {
+          ongoing = storage.get('ongoingJourneys') || [];
+          completed = storage.get('completedJourneys') || [];
+        }
+      } catch (err) {
+        console.error('[my-records] load journeys error:', err);
+        ongoing = storage.get('ongoingJourneys') || [];
+        completed = storage.get('completedJourneys') || [];
+      }
 
       // Update counts
       document.getElementById('ongoing-count').textContent = ongoing.length;
@@ -217,46 +234,58 @@
         `;
         }).join('');
       }
-    }
-    renderRecords();
+    renderRecords().then(() => {
+      // Initialize all cover maps after DOM is ready
+      coverMapsToInit.forEach(item => {
+        const el = document.getElementById(`cover-map-${item.id}`);
+        if (!el) return;
 
-    // Initialize all cover maps after DOM is ready
-    coverMapsToInit.forEach(item => {
-      const el = document.getElementById(`cover-map-${item.id}`);
-      if (!el) return;
+        // Force explicit size before init to prevent Leaflet from using default size
+        el.style.width = '80px';
+        el.style.height = '80px';
 
-      // Force explicit size before init to prevent Leaflet from using default size
-      el.style.width = '80px';
-      el.style.height = '80px';
+        const map = L.map(el, {
+          dragging: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          keyboard: false,
+          tap: false,
+          touchZoom: false,
+          zoomControl: false,
+          attributionControl: false
+        });
 
-      const map = L.map(el, {
-        dragging: false,
-        scrollWheelZoom: false,
-        doubleClickZoom: false,
-        boxZoom: false,
-        keyboard: false,
-        tap: false,
-        touchZoom: false,
-        zoomControl: false,
-        attributionControl: false
-      });
+        // Force container size and re-render
+        const container = el.querySelector('.leaflet-container');
+        if (container) {
+          container.style.width = '80px';
+          container.style.height = '80px';
+        }
 
-      // Force container size and re-render
-      const container = el.querySelector('.leaflet-container');
-      if (container) {
-        container.style.width = '80px';
-        container.style.height = '80px';
-      }
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: ''
+        }).addTo(map);
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: ''
-      }).addTo(map);
-
-      let allPoints = [];
-      if (item.segs) {
-        item.segs.forEach((seg, idx) => {
-          if (seg.gpxPoints && seg.gpxPoints.length > 0) {
-            const coords = seg.gpxPoints.filter(p => Array.isArray(p) && p.length >= 2);
+        let allPoints = [];
+        if (item.segs) {
+          item.segs.forEach((seg, idx) => {
+            if (seg.gpxPoints && seg.gpxPoints.length > 0) {
+              const coords = seg.gpxPoints.filter(p => Array.isArray(p) && p.length >= 2);
+              allPoints = allPoints.concat(coords);
+              if (coords.length >= 2) {
+                L.polyline(coords, {
+                  color: colors[idx % colors.length],
+                  weight: 3,
+                  opacity: 0.9,
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }).addTo(map);
+              }
+            }
+          });
+        } else if (item.routeCoords) {
+          item.routeCoords.forEach((coords, idx) => {
             allPoints = allPoints.concat(coords);
             if (coords.length >= 2) {
               L.polyline(coords, {
@@ -267,35 +296,22 @@
                 lineJoin: 'round'
               }).addTo(map);
             }
-          }
-        });
-      } else if (item.routeCoords) {
-        item.routeCoords.forEach((coords, idx) => {
-          allPoints = allPoints.concat(coords);
-          if (coords.length >= 2) {
-            L.polyline(coords, {
-              color: colors[idx % colors.length],
-              weight: 3,
-              opacity: 0.9,
-              lineCap: 'round',
-              lineJoin: 'round'
-            }).addTo(map);
-          }
-        });
-      }
-
-      if (allPoints.length > 0) {
-        const bounds = L.latLngBounds(allPoints.map(p => L.latLng(p[0], p[1])));
-        map.fitBounds(bounds, { padding: [5, 5] });
-      }
-
-      // Ensure map renders at correct size
-      requestAnimationFrame(() => {
-        map.invalidateSize();
-        if (container) {
-          container.style.width = '80px';
-          container.style.height = '80px';
+          });
         }
+
+        if (allPoints.length > 0) {
+          const bounds = L.latLngBounds(allPoints.map(p => L.latLng(p[0], p[1])));
+          map.fitBounds(bounds, { padding: [5, 5] });
+        }
+
+        // Ensure map renders at correct size
+        requestAnimationFrame(() => {
+          map.invalidateSize();
+          if (container) {
+            container.style.width = '80px';
+            container.style.height = '80px';
+          }
+        });
       });
     });
   </script>
