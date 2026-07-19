@@ -144,6 +144,10 @@
           if (signUpError) throw signUpError;
         }
 
+        if (window.journeyService) {
+          await window.journeyService.migrateLocalStorage();
+        }
+
         hideLoginModal();
         sessionStorage.setItem('loginSuccess', '1');
 

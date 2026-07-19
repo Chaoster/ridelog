@@ -100,6 +100,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/journey-service.js"></script>
   <script>
     const urlParams = new URLSearchParams(location.search);
     const journeyId = urlParams.get('id') || '1';
@@ -113,74 +114,74 @@
       }
     }
 
-    // Find journey data: first check completed journeys in localStorage, then sample data
-    let journey = null;
-    let isUserJourney = false;
-
-    const completedJourneys = storage.get('completedJourneys') || [];
-    const ongoingJourneys = storage.get('ongoingJourneys') || [];
-    journey = completedJourneys.find(j => j.id === journeyId) || ongoingJourneys.find(j => j.id === journeyId);
-
-    if (journey) {
-      isUserJourney = true;
-    } else {
-      journey = SAMPLE_JOURNEYS.find(j => j.id == journeyId);
-      if (!journey) {
-        alert('旅程不存在');
-        location.href = 'my-records.html';
-        throw new Error('Journey not found');
-      }
-    }
-
-    // Normalize data
-    const segs = journey.segments || [];
-    const totalDays = segs.length;
-    const totalDist = segs.reduce((s, seg) => s + (parseFloat(seg.distance) || 0), 0);
-    const totalElev = segs.reduce((s, seg) => s + (parseFloat(seg.elevation) || 0), 0);
-
-    console.log('journey loaded:', isUserJourney ? 'user' : 'sample', 'segments:', segs.length);
-
-    // Render edit/delete buttons for user journeys
-    if (isUserJourney) {
-      document.getElementById('header-actions').innerHTML = `
-        <button style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="editTitle()">编辑标题</button>
-        <button style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteModal()">删除</button>
-      `;
-    }
-
-    function editTitle() {
+    // Expose handlers used in inline onclick attributes
+    window.editTitle = async function () {
       const newTitle = prompt('修改旅程标题:', journey.title);
       if (newTitle && newTitle.trim()) {
         journey.title = newTitle.trim();
         document.getElementById('detail-title').textContent = journey.title;
-        // Save back to localStorage
-        const list = completedJourneys.find(j => j.id === journeyId) ? completedJourneys : ongoingJourneys;
-        const idx = list.findIndex(j => j.id === journeyId);
-        if (idx >= 0) {
-          list[idx] = journey;
-          const key = completedJourneys.find(j => j.id === journeyId) ? 'completedJourneys' : 'ongoingJourneys';
-          storage.set(key, list);
+        try {
+          await window.journeyService.updateJourney(journey);
+        } catch (err) {
+          console.error('[journey-detail] update title error:', err);
+          alert('保存失败：' + err.message);
         }
       }
-    }
+    };
 
-    function showDeleteModal() {
+    window.showDeleteModal = function () {
       const el = document.getElementById('delete-modal');
       if (el) el.classList.add('active');
-    }
+    };
 
-    function confirmDelete() {
+    window.confirmDelete = async function () {
       document.getElementById('delete-modal').classList.remove('active');
-      // Remove from completed
-      let completed = storage.get('completedJourneys') || [];
-      completed = completed.filter(j => j.id !== journeyId);
-      storage.set('completedJourneys', completed);
-      // Remove from ongoing (just in case)
-      let ongoing = storage.get('ongoingJourneys') || [];
-      ongoing = ongoing.filter(j => j.id !== journeyId);
-      storage.set('ongoingJourneys', ongoing);
-      location.href = 'my-records.html';
-    }
+      try {
+        await window.journeyService.deleteJourney(journeyId);
+        location.href = 'my-records.html';
+      } catch (err) {
+        console.error('[journey-detail] delete error:', err);
+        alert('删除失败：' + err.message);
+      }
+    };
+
+    let journey = null;
+    let isUserJourney = false;
+
+    (async function () {
+      // Load journey data
+      try {
+        journey = await window.journeyService.getJourney(journeyId);
+      } catch (err) {
+        console.error('[journey-detail] load journey error:', err);
+      }
+
+      if (journey) {
+        isUserJourney = true;
+      } else {
+        journey = SAMPLE_JOURNEYS.find(j => j.id == journeyId);
+        if (!journey) {
+          alert('旅程不存在');
+          location.href = 'my-records.html';
+          throw new Error('Journey not found');
+        }
+      }
+
+      // Normalize data
+      const segs = journey.segments || [];
+      const totalDays = segs.length;
+      const totalDist = segs.reduce((s, seg) => s + (parseFloat(seg.distance) || 0), 0);
+      const totalElev = segs.reduce((s, seg) => s + (parseFloat(seg.elevation) || 0), 0);
+
+      console.log('journey loaded:', isUserJourney ? 'user' : 'sample', 'segments:', segs.length);
+
+      // Render edit/delete buttons for user journeys
+      if (isUserJourney) {
+        document.getElementById('header-actions').innerHTML = `
+          <button style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="editTitle()">编辑标题</button>
+          <button style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteModal()">删除</button>
+        `;
+      }
 
     // Route colors
     const colors = ['#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
@@ -599,6 +600,7 @@
         最终抵达 <strong>${journey.end}</strong>。
       `;
     }
+  })();
   </script>
 </body>
 </html>

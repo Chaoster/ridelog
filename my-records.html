@@ -4,9 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>我的记录 - RideLog</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=7">
   <link rel="icon" type="image/png" href="images/favicon.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/login-modal.js"></script>
   <style>
     .status-badge {
       display: inline-block;
@@ -30,11 +33,15 @@
   <!-- Header -->
   <div class="header">
     <img src="images/logo.png" class="logo" alt="DONKE">
+    <a href="profile.html" class="avatar" id="header-avatar" aria-label="我的" onclick="event.preventDefault(); requireAuth(() => location.href='profile.html')">
+      <svg id="header-avatar-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <img id="header-avatar-img" class="hidden" alt="头像">
+    </a>
   </div>
 
   <!-- CTA Button -->
   <div style="padding: 16px 20px;">
-    <button class="btn btn-accent" style="width:100%;" onclick="location.href='new-journey.html'">
+    <button class="btn btn-accent" style="width:100%;" onclick="requireAuth(() => location.href='new-journey.html')">
       +新旅程
     </button>
   </div>
@@ -65,7 +72,7 @@
   </div>
 
   <!-- Completed Journeys -->
-  <div class="section">
+  <div class="section" style="margin-bottom:20px;">
     <div class="section-title">
       已完成
       <span class="status-badge status-completed" id="completed-count">0</span>
@@ -79,8 +86,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       首页
     </a>
-    <a href="new-journey.html" class="nav-cta">+新旅程</a>
-    <a href="my-records.html" class="nav-item active">
+    <a href="new-journey.html" class="nav-cta" onclick="event.preventDefault(); requireAuth(() => location.href='new-journey.html')">+新旅程</a>
+    <a href="my-records.html" class="nav-item active" onclick="event.preventDefault(); requireAuth(() => location.href='my-records.html')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       记录
     </a>
@@ -88,6 +95,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/journey-service.js"></script>
   <script>
     const colors = ['#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
 
@@ -101,9 +109,25 @@
       return urls[hash % urls.length];
     }
 
-    function renderRecords() {
-      const ongoing = storage.get('ongoingJourneys') || [];
-      const completed = storage.get('completedJourneys') || [];
+    async function renderRecords() {
+      let ongoing = [];
+      let completed = [];
+      try {
+        if (await window.journeyService.isLoggedIn()) {
+          await window.journeyService.migrateLocalStorage();
+          [ongoing, completed] = await Promise.all([
+            window.journeyService.getJourneys({ status: 'ongoing' }),
+            window.journeyService.getJourneys({ status: 'completed' })
+          ]);
+        } else {
+          ongoing = storage.get('ongoingJourneys') || [];
+          completed = storage.get('completedJourneys') || [];
+        }
+      } catch (err) {
+        console.error('[my-records] load journeys error:', err);
+        ongoing = storage.get('ongoingJourneys') || [];
+        completed = storage.get('completedJourneys') || [];
+      }
 
       // Update counts
       document.getElementById('ongoing-count').textContent = ongoing.length;
@@ -118,7 +142,7 @@
         totalDist += segs.reduce((s, seg) => s + (parseFloat(seg.distance) || 0), 0);
       });
       document.getElementById('stat-journeys').textContent = ongoing.length + completed.length + SAMPLE_JOURNEYS.length;
-      document.getElementById('stat-distance').textContent = Math.floor(totalDist);
+      document.getElementById('stat-distance').textContent = Math.round(totalDist);
       document.getElementById('stat-days').textContent = totalDays;
 
       // Render ongoing
@@ -199,7 +223,7 @@
                   <div style="font-weight:700;font-size:15px;">${j.title}</div>
                   <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">${j.completedAt || j.date}</div>
                   <div style="display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text-secondary);">
-                    <span>${totalDist > 0 ? totalDist.toFixed(1) : '-'} km</span>
+                    <span>${totalDist > 0 ? Math.round(totalDist) : '-'} km</span>
                     <span>${segs.length} 天</span>
                     ${totalElev > 0 ? `<span>↑ ${Math.round(totalElev)}m</span>` : ''}
                   </div>
@@ -210,46 +234,58 @@
         `;
         }).join('');
       }
-    }
-    renderRecords();
+    renderRecords().then(() => {
+      // Initialize all cover maps after DOM is ready
+      coverMapsToInit.forEach(item => {
+        const el = document.getElementById(`cover-map-${item.id}`);
+        if (!el) return;
 
-    // Initialize all cover maps after DOM is ready
-    coverMapsToInit.forEach(item => {
-      const el = document.getElementById(`cover-map-${item.id}`);
-      if (!el) return;
+        // Force explicit size before init to prevent Leaflet from using default size
+        el.style.width = '80px';
+        el.style.height = '80px';
 
-      // Force explicit size before init to prevent Leaflet from using default size
-      el.style.width = '80px';
-      el.style.height = '80px';
+        const map = L.map(el, {
+          dragging: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          keyboard: false,
+          tap: false,
+          touchZoom: false,
+          zoomControl: false,
+          attributionControl: false
+        });
 
-      const map = L.map(el, {
-        dragging: false,
-        scrollWheelZoom: false,
-        doubleClickZoom: false,
-        boxZoom: false,
-        keyboard: false,
-        tap: false,
-        touchZoom: false,
-        zoomControl: false,
-        attributionControl: false
-      });
+        // Force container size and re-render
+        const container = el.querySelector('.leaflet-container');
+        if (container) {
+          container.style.width = '80px';
+          container.style.height = '80px';
+        }
 
-      // Force container size and re-render
-      const container = el.querySelector('.leaflet-container');
-      if (container) {
-        container.style.width = '80px';
-        container.style.height = '80px';
-      }
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: ''
+        }).addTo(map);
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: ''
-      }).addTo(map);
-
-      let allPoints = [];
-      if (item.segs) {
-        item.segs.forEach((seg, idx) => {
-          if (seg.gpxPoints && seg.gpxPoints.length > 0) {
-            const coords = seg.gpxPoints.filter(p => Array.isArray(p) && p.length >= 2);
+        let allPoints = [];
+        if (item.segs) {
+          item.segs.forEach((seg, idx) => {
+            if (seg.gpxPoints && seg.gpxPoints.length > 0) {
+              const coords = seg.gpxPoints.filter(p => Array.isArray(p) && p.length >= 2);
+              allPoints = allPoints.concat(coords);
+              if (coords.length >= 2) {
+                L.polyline(coords, {
+                  color: colors[idx % colors.length],
+                  weight: 3,
+                  opacity: 0.9,
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }).addTo(map);
+              }
+            }
+          });
+        } else if (item.routeCoords) {
+          item.routeCoords.forEach((coords, idx) => {
             allPoints = allPoints.concat(coords);
             if (coords.length >= 2) {
               L.polyline(coords, {
@@ -260,35 +296,22 @@
                 lineJoin: 'round'
               }).addTo(map);
             }
-          }
-        });
-      } else if (item.routeCoords) {
-        item.routeCoords.forEach((coords, idx) => {
-          allPoints = allPoints.concat(coords);
-          if (coords.length >= 2) {
-            L.polyline(coords, {
-              color: colors[idx % colors.length],
-              weight: 3,
-              opacity: 0.9,
-              lineCap: 'round',
-              lineJoin: 'round'
-            }).addTo(map);
-          }
-        });
-      }
-
-      if (allPoints.length > 0) {
-        const bounds = L.latLngBounds(allPoints.map(p => L.latLng(p[0], p[1])));
-        map.fitBounds(bounds, { padding: [5, 5] });
-      }
-
-      // Ensure map renders at correct size
-      requestAnimationFrame(() => {
-        map.invalidateSize();
-        if (container) {
-          container.style.width = '80px';
-          container.style.height = '80px';
+          });
         }
+
+        if (allPoints.length > 0) {
+          const bounds = L.latLngBounds(allPoints.map(p => L.latLng(p[0], p[1])));
+          map.fitBounds(bounds, { padding: [5, 5] });
+        }
+
+        // Ensure map renders at correct size
+        requestAnimationFrame(() => {
+          map.invalidateSize();
+          if (container) {
+            container.style.width = '80px';
+            container.style.height = '80px';
+          }
+        });
       });
     });
   </script>
