@@ -77,10 +77,15 @@ function parseGPX(gpxText) {
   const doc = parser.parseFromString(gpxText, 'text/xml');
   const points = [];
   doc.querySelectorAll('trkpt').forEach(pt => {
-    points.push([
+    const eleEl = pt.querySelector('ele');
+    const p = [
       parseFloat(pt.getAttribute('lat')),
       parseFloat(pt.getAttribute('lon'))
-    ]);
+    ];
+    if (eleEl) {
+      p.push(parseFloat(eleEl.textContent));
+    }
+    points.push(p);
   });
   return points;
 }

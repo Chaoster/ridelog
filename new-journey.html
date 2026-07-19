@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>开始新旅程 - RideLog</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=7">
   <link rel="icon" type="image/png" href="images/favicon.png">
 </head>
-<body>
+<body class="page-no-nav" style="padding-bottom:20px;">
   <!-- Page Header -->
   <div class="page-header">
     <button class="back-btn" onclick="history.back()">&#8249;</button>
@@ -15,15 +15,15 @@
   </div>
 
   <!-- Form -->
-  <div style="padding: 8px 0;">
-    <div class="form-group">
+  <div style="padding: 8px 0 0;">
+    <div class="form-group" style="margin: 16px 20px 0;">
       <label class="form-label">旅程标题</label>
       <input type="text" class="form-input" id="journey-title" placeholder="给你的旅程起个名字，例如：环青海湖骑行">
     </div>
   </div>
 
   <!-- Action Buttons -->
-  <div style="margin: 24px 20px;">
+  <div style="margin: 20px 20px 0;">
     <button class="btn btn-primary" style="width:100%;" onclick="createJourney()">创建旅程</button>
   </div>
 
