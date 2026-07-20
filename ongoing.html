@@ -11,13 +11,35 @@
   <script src="js/login-modal.js"></script>
 </head>
 <body class="page-no-nav" style="padding-bottom:20px;">
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" style="position:fixed;inset:0;background:rgba(255,255,255,0.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;">
+    <div style="width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:loading-spin 1s linear infinite;"></div>
+    <div style="color:var(--text-secondary);font-size:14px;">加载中...</div>
+  </div>
+  <style>
+    @keyframes loading-spin { to { transform: rotate(360deg); } }
+  </style>
+
   <!-- Page Header -->
   <div class="page-header">
     <button class="back-btn" onclick="goBack()">&#8249;</button>
     <div class="page-title">旅程进行中</div>
-    <button style="margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="endJourney()">
+    <button style="margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteJourneyModal()">删除</button>
+    <button style="margin-left:8px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="endJourney()">
       结束旅程
     </button>
+  </div>
+
+  <!-- Modal: Delete Journey Confirmation -->
+  <div class="modal-overlay" id="delete-journey-modal">
+    <div class="modal">
+      <div class="modal-title">删除旅程</div>
+      <div class="modal-desc">确定要删除这个旅程吗？所有每日记录和照片都会被删除，此操作不可恢复。</div>
+      <div class="action-row" style="margin:0;">
+        <button class="btn btn-secondary" onclick="document.getElementById('delete-journey-modal').classList.remove('active')">取消</button>
+        <button class="btn btn-accent" onclick="confirmDeleteJourney()">确认删除</button>
+      </div>
+    </div>
   </div>
 
   <!-- Journey Title -->
@@ -96,11 +118,15 @@
         return;
       }
 
+      document.getElementById('loading-overlay').style.display = 'flex';
+
       try {
-        journey = await window.journeyService.getJourney(journeyId);
+        journey = await window.journeyService.getJourneySummary(journeyId);
       } catch (err) {
         console.error('[ongoing] load journey error:', err);
       }
+
+      document.getElementById('loading-overlay').style.display = 'none';
 
       if (!journey) {
         alert('旅程不存在');
@@ -111,89 +137,6 @@
       document.getElementById('journey-title').textContent = journey.title;
       document.getElementById('journey-meta').textContent = `创建于 ${journey.createdAt}`;
       renderSegments();
-    }
-
-    // Generate SVG route snapshot from GPX points with map-like background
-    function generateRouteSvg(gpxPoints, size = 100) {
-      try {
-        if (!gpxPoints || gpxPoints.length < 2) return '';
-
-        // Validate points format [lat, lon]
-        const pts = gpxPoints
-          .filter(p => Array.isArray(p) && p.length >= 2 && typeof p[0] === 'number' && typeof p[1] === 'number')
-          .map(p => ({ lat: p[0], lon: p[1] }));
-
-        if (pts.length < 2) return '';
-
-        const minLat = Math.min(...pts.map(p => p.lat));
-        const maxLat = Math.max(...pts.map(p => p.lat));
-        const minLon = Math.min(...pts.map(p => p.lon));
-        const maxLon = Math.max(...pts.map(p => p.lon));
-
-        if (!isFinite(minLat) || !isFinite(maxLat) || !isFinite(minLon) || !isFinite(maxLon)) return '';
-
-        // Add padding
-        const latPad = (maxLat - minLat) * 0.15 || 0.01;
-        const lonPad = (maxLon - minLon) * 0.15 || 0.01;
-
-        const latRange = (maxLat + latPad) - (minLat - latPad);
-        const lonRange = (maxLon + lonPad) - (minLon - lonPad);
-
-        // Map to SVG coordinates
-        const mapX = lon => ((lon - (minLon - lonPad)) / lonRange) * size;
-        const mapY = lat => size - ((lat - (minLat - latPad)) / latRange) * size;
-
-        const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${mapX(p.lon).toFixed(1)},${mapY(p.lat).toFixed(1)}`).join(' ');
-        const sx = mapX(pts[0].lon).toFixed(1);
-        const sy = mapY(pts[0].lat).toFixed(1);
-        const ex = mapX(pts[pts.length - 1].lon).toFixed(1);
-        const ey = mapY(pts[pts.length - 1].lat).toFixed(1);
-
-        // Build map-like background: grid lines + random blocks
-        let bgElements = '';
-        const gridStep = size / 6;
-        for (let i = 0; i <= 6; i++) {
-          const pos = (i * gridStep).toFixed(1);
-          bgElements += `<line x1="${pos}" y1="0" x2="${pos}" y2="${size}" stroke="#dce5d8" stroke-width="0.8"/>`;
-          bgElements += `<line x1="0" y1="${pos}" x2="${size}" y2="${pos}" stroke="#dce5d8" stroke-width="0.8"/>`;
-        }
-        // Add some random "blocks" to simulate buildings/land features
-        const seed = pts.length;
-        const blocks = [
-          { x: 5, y: 5, w: 12, h: 10 },
-          { x: 22, y: 8, w: 8, h: 12 },
-          { x: 55, y: 15, w: 15, h: 8 },
-          { x: 75, y: 5, w: 10, h: 10 },
-          { x: 8, y: 35, w: 10, h: 15 },
-          { x: 35, y: 40, w: 12, h: 8 },
-          { x: 60, y: 35, w: 10, h: 12 },
-          { x: 82, y: 38, w: 10, h: 10 },
-          { x: 15, y: 65, w: 15, h: 10 },
-          { x: 40, y: 70, w: 10, h: 10 },
-          { x: 65, y: 65, w: 12, h: 12 },
-          { x: 85, y: 72, w: 8, h: 8 },
-          { x: 5, y: 85, w: 10, h: 10 },
-          { x: 30, y: 88, w: 12, h: 8 },
-          { x: 55, y: 85, w: 10, h: 10 },
-          { x: 78, y: 88, w: 12, h: 8 },
-        ];
-        blocks.forEach(b => {
-          bgElements += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="2" fill="#dbe7d6" opacity="0.6"/>`;
-        });
-
-        return `
-          <svg width="100%" height="100%" viewBox="0 0 ${size} ${size}" style="border-radius:8px;display:block;">
-            <rect width="${size}" height="${size}" fill="#edf3ea"/>
-            ${bgElements}
-            <path d="${pathD}" fill="none" stroke="#FF7B3D" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="${sx}" cy="${sy}" r="4.5" fill="#2ecc71" stroke="white" stroke-width="2"/>
-            <circle cx="${ex}" cy="${ey}" r="4.5" fill="#e74c3c" stroke="white" stroke-width="2"/>
-          </svg>
-        `;
-      } catch (e) {
-        console.error('generateRouteSvg error:', e);
-        return '';
-      }
     }
 
     function renderSegments() {
@@ -234,8 +177,9 @@
           const images = [];
 
           // Route snapshot (always present if GPX)
-          if (hasGpx && gpxPoints.length > 0) {
-            const svg = generateRouteSvg(gpxPoints);
+          if (seg.routeSvg || (hasGpx && gpxPoints.length > 0)) {
+            const svg = seg.routeSvg || generateRouteSvg(gpxPoints);
+            console.log('[renderSegments] routeSvg length:', (seg.routeSvg || '').length, 'fallback:', !seg.routeSvg, 'svg length:', (svg || '').length);
             if (svg) images.push(svg);
           }
 
@@ -247,7 +191,7 @@
           }
 
           return `
-            <div class="card" style="margin:12px 20px;cursor:pointer;" onclick="location.href='daily-segment.html?edit=1&amp;idx=${i}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">
+            <div class="card" style="margin:12px 20px;">
               <div class="card-content">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
                   <div class="segment-day" style="width:40px;height:40px;">
@@ -262,7 +206,7 @@
                       ${seg.duration ? `<span style="font-size:12px;color:var(--text-secondary);">${seg.duration}</span>` : ''}
                     </div>
                   </div>
-                  <span style="font-size:12px;color:var(--text-secondary);">&#9998; 编辑</span>
+                  <span style="font-size:12px;color:var(--text-secondary);cursor:pointer;" onclick="event.stopPropagation();location.href='daily-segment.html?edit=1&amp;idx=${i}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">&#9998; 编辑</span>
                 </div>
                 <div style="font-size:14px;color:var(--text);line-height:1.6;margin-bottom:12px;">${seg.note}</div>
                 ${images.length > 0 ? `
@@ -287,6 +231,22 @@
       location.href = `daily-segment.html?day=${nextDay}&journeyId=${journey.id}&journey=${encodeURIComponent(journey.title)}`;
     }
 
+    function showDeleteJourneyModal() {
+      document.getElementById('delete-journey-modal').classList.add('active');
+    }
+
+    async function confirmDeleteJourney() {
+      document.getElementById('delete-journey-modal').classList.remove('active');
+
+      try {
+        await window.journeyService.deleteJourney(journeyId);
+        alert('旅程已删除');
+        location.href = 'my-records.html';
+      } catch (err) {
+        alert('删除旅程失败：' + err.message);
+      }
+    }
+
     function endJourney() {
       const segs = journey?.segments || [];
       if (segs.length === 0) {
@@ -298,13 +258,15 @@
 
     async function confirmEndJourney() {
       document.getElementById('end-modal').classList.remove('active');
+      document.getElementById('loading-overlay').style.display = 'flex';
 
       try {
         await window.journeyService.endJourney(journeyId);
-        alert('旅程已结束！正在生成旅行日志...');
         location.href = `journey-detail.html?id=${journeyId}&completed=1&from=records`;
       } catch (err) {
+        console.error('[ongoing] end journey error:', err);
         alert('结束旅程失败：' + err.message);
+        document.getElementById('loading-overlay').style.display = 'none';
       }
     }
   </script>

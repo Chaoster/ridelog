@@ -11,10 +11,32 @@
   <script src="js/supabase-config.js"></script>
 </head>
 <body class="page-no-nav" style="padding-bottom:20px;">
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" style="position:fixed;inset:0;background:rgba(255,255,255,0.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;">
+    <div style="width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:loading-spin 1s linear infinite;"></div>
+    <div style="color:var(--text-secondary);font-size:14px;">加载中...</div>
+  </div>
+  <style>
+    @keyframes loading-spin { to { transform: rotate(360deg); } }
+  </style>
+
   <!-- Page Header -->
-  <div class="page-header">
-    <button class="back-btn" onclick="history.back()">&#8249;</button>
+  <div class="page-header" style="z-index:10001;pointer-events:none;">
+    <button class="back-btn" style="pointer-events:auto;" onclick="history.back()">&#8249;</button>
     <div class="page-title" id="page-title">每日记录</div>
+    <button id="delete-btn" style="display:none;margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteModal()">删除</button>
+  </div>
+
+  <!-- Delete Modal -->
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal">
+      <div class="modal-title">删除记录</div>
+      <div class="modal-desc">确定要删除这条每日记录吗？此操作不可恢复。</div>
+      <div class="action-row" style="margin:0;">
+        <button class="btn btn-secondary" onclick="document.getElementById('delete-modal').classList.remove('active')">取消</button>
+        <button class="btn btn-accent" onclick="confirmDeleteSegment()">确认删除</button>
+      </div>
+    </div>
   </div>
 
   <!-- Day Badge -->
@@ -137,6 +159,7 @@
     let hoverMarker = null;
     let pinSize = 36;
     let routeWeight = 4;
+    let routeSvg = '';
     let currentElevGain = 0;
     let currentElevLoss = 0;
     let currentDistance = 0;
@@ -147,6 +170,8 @@
     let existingSeg = null;
 
     async function loadJourney() {
+      document.getElementById('loading-overlay').style.display = 'flex';
+
       if (!journeyId) {
         alert('缺少 journeyId');
         location.href = 'my-records.html';
@@ -154,7 +179,11 @@
       }
 
       try {
-        journey = await window.journeyService.getJourney(journeyId);
+        if (isEdit && editIdx >= 0) {
+          journey = await window.journeyService.getJourneyForEdit(journeyId, editIdx);
+        } else {
+          journey = await window.journeyService.getJourneyMinimal(journeyId);
+        }
       } catch (err) {
         console.error('[daily-segment] load journey error:', err);
       }
@@ -175,6 +204,7 @@
       if (isEdit && editIdx >= 0 && journey && journey.segments && journey.segments[editIdx]) {
       existingSeg = journey.segments[editIdx];
       document.getElementById('page-title').textContent = '编辑记录';
+      document.getElementById('delete-btn').style.display = 'block';
 
       // Prefill form
       document.getElementById('date-input').value = existingSeg.date || '';
@@ -203,6 +233,10 @@
 
       // Prefill GPX route
       if (existingSeg.gpxPoints && existingSeg.gpxPoints.length > 0) {
+        console.log('[daily-segment edit] existingSeg.gpxPoints length:', existingSeg.gpxPoints.length);
+        console.log('[daily-segment edit] first 3:', existingSeg.gpxPoints.slice(0, 3));
+        console.log('[daily-segment edit] last 3:', existingSeg.gpxPoints.slice(-3));
+
         // Normalize stored points: may be old [lat,lon] arrays, [lat,lon,ele] arrays, or {lat,lon,ele} objects
         gpxPoints = existingSeg.gpxPoints.map(p => {
           if (Array.isArray(p)) {
@@ -211,6 +245,10 @@
           return [p.lat, p.lon, p.ele != null ? p.ele : null];
         });
         rawGpxPoints = gpxPoints.map(p => ({ lat: p[0], lon: p[1], ele: p[2] }));
+        routeSvg = existingSeg.routeSvg || generateRouteSvg(gpxPoints, 100);
+
+        const validCount = gpxPoints.filter(p => !isNaN(p[0]) && !isNaN(p[1])).length;
+        console.log('[daily-segment edit] normalized gpxPoints length:', gpxPoints.length, 'valid:', validCount, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
 
         let totalDist = 0;
         gpxDists = [0];
@@ -266,6 +304,8 @@
 
       redistributePhotos();
       }
+
+      document.getElementById('loading-overlay').style.display = 'none';
     }
 
     loadJourney();
@@ -339,8 +379,14 @@
     }
 
     function redistributePhotos() {
-      if (photos.length === 0) return;
       clearPhotoMarkers();
+
+      // Always fit map to route when one exists (even without photos)
+      if (routeLine) {
+        map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+      }
+
+      if (photos.length === 0) return;
 
       // Photos with real GPS: display at exact position, do NOT snap to route
       photos.forEach(p => {
@@ -711,6 +757,8 @@
 
         gpxPoints = rawPoints.map(p => [p.lat, p.lon, p.ele]);
         rawGpxPoints = rawPoints;
+        routeSvg = generateRouteSvg(gpxPoints, 100);
+        console.log('[daily-segment handleGPX] generated routeSvg length:', routeSvg ? routeSvg.length : 0);
 
         let totalDist = 0;
         const dists = [0];
@@ -793,11 +841,18 @@
     }
 
     async function saveSegment() {
+      const saveBtn = document.querySelector('.btn-primary');
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      saveBtn.classList.add('btn-loading');
+
       const date = document.getElementById('date-input').value;
       const note = document.getElementById('note-input').value;
 
       if (!note.trim()) {
         alert('请填写今日笔记');
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('btn-loading');
         return;
       }
 
@@ -810,11 +865,15 @@
         photoUrls: photos.map(p => p.url),
         gpx: gpxPoints.length > 0,
         gpxPoints: gpxPoints,
+        routeSvg: routeSvg,
         distance: Math.round(currentDistance) || 0,
         elevation: Math.round(currentElevGain) || 0,
         elevationLoss: Math.round(currentElevLoss) || 0,
         duration: formatDuration(currentDurationHours)
       };
+
+      console.log('[daily-segment save] gpxPoints count:', gpxPoints.length, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
+      console.log('[daily-segment save] routeSvg length:', segmentData.routeSvg ? segmentData.routeSvg.length : 0);
 
       try {
         const updated = await window.journeyService.saveSegment(journeyId, segmentData, isEdit ? editIdx : -1);
@@ -823,6 +882,26 @@
       } catch (err) {
         console.error('[daily-segment] save segment error:', err);
         alert('保存失败：' + err.message);
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('btn-loading');
+      }
+    }
+
+    function showDeleteModal() {
+      if (!isEdit) return;
+      document.getElementById('delete-modal').classList.add('active');
+    }
+
+    async function confirmDeleteSegment() {
+      document.getElementById('delete-modal').classList.remove('active');
+      if (!isEdit || editIdx < 0) return;
+
+      try {
+        await window.journeyService.deleteSegment(journeyId, editIdx);
+        location.href = `ongoing.html?id=${journeyId}`;
+      } catch (err) {
+        console.error('[daily-segment] delete segment error:', err);
+        alert('删除失败：' + err.message);
       }
     }
   </script>

@@ -39,8 +39,42 @@
     return null;
   }
 
+  function routeSvgFromSegments(segments) {
+    for (const seg of segments || []) {
+      if (seg.routeSvg) return seg.routeSvg;
+    }
+    return null;
+  }
+
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = deg => deg * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function simplifyGpxPoints(points, thresholdMeters = 30) {
+    if (!points || points.length <= 2) return points;
+    const result = [points[0]];
+    let last = points[0];
+    for (let i = 1; i < points.length - 1; i++) {
+      const p = points[i];
+      const dist = haversineMeters(last[0], last[1], p[0], p[1]);
+      if (dist >= thresholdMeters) {
+        result.push(p);
+        last = p;
+      }
+    }
+    result.push(points[points.length - 1]);
+    return result;
+  }
+
   // Build the frontend journey object from DB rows
-  function buildJourney(journeyRow, segmentRows, photoRows, gpxRows) {
+  function buildJourney(journeyRow, segmentRows, photoRows, gpxRows, editIdx = -1) {
     const photosBySegment = {};
     photoRows.forEach(p => {
       photosBySegment[p.segment_id] = photosBySegment[p.segment_id] || [];
@@ -60,9 +94,17 @@
           .sort((a, b) => a.created_at - b.created_at)
           .map(p => ({ url: p.url, lat: Number(p.lat) || 0, lng: Number(p.lng) || 0 }));
 
-        const gpxPoints = (gpxBySegment[seg.id] || [])
-          .sort((a, b) => a.point_index - b.point_index)
-          .map(pt => [Number(pt.lat), Number(pt.lng), pt.elevation != null ? Number(pt.elevation) : null]);
+        const rawGpxRows = (gpxBySegment[seg.id] || []).sort((a, b) => a.point_index - b.point_index);
+        const gpxPoints = rawGpxRows
+          .map(pt => [Number(pt.lat), Number(pt.lng), pt.elevation != null ? Number(pt.elevation) : null])
+          .filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+
+        const shouldSimplify = editIdx < 0;
+        const simplifiedGpx = shouldSimplify ? simplifyGpxPoints(gpxPoints, 30) : gpxPoints;
+
+        if (gpxPoints.length > 0) {
+          console.log('[buildJourney] segment', seg.id, 'day', seg.day_index, 'raw rows:', rawGpxRows.length, 'valid points:', gpxPoints.length, 'simplified:', simplifiedGpx.length, 'first 3 raw:', rawGpxRows.slice(0, 3), 'last raw:', rawGpxRows[rawGpxRows.length - 1]);
+        }
 
         return {
           day: seg.day_index,
@@ -71,8 +113,9 @@
           photoCount: photos.length,
           photos,
           photoUrls: photos.map(p => p.url),
-          gpx: gpxPoints.length > 0,
-          gpxPoints,
+          gpx: simplifiedGpx.length > 0,
+          gpxPoints: simplifiedGpx,
+          routeSvg: seg.route_svg || '',
           distance: Number(seg.distance) || 0,
           elevation: Number(seg.elevation) || 0,
           elevationLoss: Number(seg.elevation_loss) || 0,
@@ -88,50 +131,89 @@
       completedAt: formatDate(journeyRow.completed_at),
       isPublic: journeyRow.is_public,
       segments,
-      coverUrl: journeyRow.cover_url || coverUrlFromSegments(segments)
+      coverUrl: journeyRow.cover_url || coverUrlFromSegments(segments),
+      coverSvg: routeSvgFromSegments(segments)
     };
   }
 
-  async function fetchJourneyWithData(journeyId) {
-    const { data: journeyRow, error: jErr } = await supabaseClient
-      .from('journeys')
-      .select('*')
-      .eq('id', journeyId)
-      .maybeSingle();
-    if (jErr) throw jErr;
-    if (!journeyRow) return null;
-
-    const { data: segmentRows, error: sErr } = await supabaseClient
-      .from('segments')
-      .select('*')
-      .eq('journey_id', journeyId);
-    if (sErr) throw sErr;
-
-    const segmentIds = (segmentRows || []).map(s => s.id);
-    let photoRows = [];
-    let gpxRows = [];
-
-    if (segmentIds.length) {
-      const { data: pRows, error: pErr } = await supabaseClient
-        .from('photos')
+  async function fetchRowsForSegment(table, segmentId, orderColumn) {
+    const allRows = [];
+    const batchSize = 1000;
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabaseClient
+        .from(table)
         .select('*')
-        .in('segment_id', segmentIds);
-      if (pErr) throw pErr;
-      photoRows = pRows || [];
-
-      const { data: gRows, error: gErr } = await supabaseClient
-        .from('gpx_points')
-        .select('*')
-        .in('segment_id', segmentIds);
-      if (gErr) throw gErr;
-      gpxRows = gRows || [];
+        .eq('segment_id', segmentId)
+        .order(orderColumn, { ascending: true })
+        .range(from, from + batchSize - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allRows.push(...data);
+      if (data.length < batchSize) break;
+      from += batchSize;
     }
+    return allRows;
+  }
 
-    return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows);
+  async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false, editIdx = -1 } = {}) {
+    try {
+      const loggedIn = await isLoggedIn();
+      const userId = loggedIn ? await getUserId() : null;
+
+      let query = supabaseClient.from('journeys').select('*').eq('id', journeyId);
+      if (loggedIn) {
+        query = query.eq('user_id', userId);
+      }
+      const { data: journeyRow, error: jErr } = await query.maybeSingle();
+      if (jErr) throw jErr;
+      if (!journeyRow) return null;
+
+      const { data: segmentRows, error: sErr } = await supabaseClient
+        .from('segments')
+        .select('*')
+        .eq('journey_id', journeyId);
+      if (sErr) throw sErr;
+
+      const segmentIds = (segmentRows || []).map(s => s.id);
+      let photoRows = [];
+      let gpxRows = [];
+
+      if (segmentIds.length) {
+        // For edit mode, only load full gpx/photos for the target segment
+        const targetIds = editIdx >= 0 && segmentRows[editIdx]
+          ? [segmentRows[editIdx].id]
+          : segmentIds;
+
+        if (includePhotos) {
+          const photoResults = await Promise.all(targetIds.map(segId =>
+            fetchRowsForSegment('photos', segId, 'created_at').catch(e => {
+              console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
+              return [];
+            })
+          ));
+          photoRows = photoResults.flat();
+        }
+        if (includeGpx) {
+          const gpxResults = await Promise.all(targetIds.map(segId =>
+            fetchRowsForSegment('gpx_points', segId, 'point_index').catch(e => {
+              console.error('[fetchJourneyWithData] gpx_points fetch error for segment', segId, e);
+              return [];
+            })
+          ));
+          gpxRows = gpxResults.flat();
+        }
+      }
+
+      return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows, editIdx);
+    } catch (err) {
+      console.error('[fetchJourneyWithData] fatal error:', err);
+      throw err;
+    }
   }
 
   async function updateJourneyTotals(journeyId) {
-    const journey = await fetchJourneyWithData(journeyId);
+    const journey = await fetchJourneyWithData(journeyId, { includePhotos: true, includeGpx: false });
     const totalDist = journey.segments.reduce((s, seg) => s + (seg.distance || 0), 0);
     const totalElev = journey.segments.reduce((s, seg) => s + (seg.elevation || 0), 0);
     const coverUrl = coverUrlFromSegments(journey.segments);
@@ -212,7 +294,14 @@
         throw error;
       }
 
-      const results = await Promise.all((journeyRows || []).map(j => fetchJourneyWithData(j.id)));
+      const results = await Promise.all((journeyRows || []).map(async j => {
+        try {
+          return await fetchJourneyWithData(j.id, { includePhotos: false, includeGpx: false });
+        } catch (err) {
+          console.error('[journeyService] fetch journey summary error, id:', j.id, err);
+          return null;
+        }
+      }));
       return results.filter(Boolean);
     }
 
@@ -220,11 +309,60 @@
     return getLocalJourneys(status);
   }
 
-  async function getJourney(id) {
+  async function getJourneySummary(id) {
     if (await isLoggedIn()) {
-      return fetchJourneyWithData(id);
+      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: false });
     }
     return getLocalJourney(id);
+  }
+
+  async function getJourneyForEdit(id, editIdx) {
+    if (await isLoggedIn()) {
+      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: true, editIdx });
+    }
+    return getLocalJourney(id);
+  }
+
+  async function getJourney(id) {
+    if (await isLoggedIn()) {
+      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: true });
+    }
+    return getLocalJourney(id);
+  }
+
+  async function getJourneyMinimal(id) {
+    if (await isLoggedIn()) {
+      const { data, error } = await supabaseClient
+        .from('journeys')
+        .select('id, title, status, created_at, completed_at, is_public, total_distance, total_elevation, cover_url')
+        .eq('id', id)
+        .eq('user_id', await getUserId())
+        .maybeSingle();
+      if (error) {
+        console.error('[journeyService] getJourneyMinimal error:', error);
+        throw error;
+      }
+      if (!data) return null;
+      return {
+        id: data.id,
+        title: data.title,
+        status: data.status,
+        createdAt: formatDate(data.created_at),
+        completedAt: formatDate(data.completed_at),
+        isPublic: data.is_public,
+        segments: [],
+        coverUrl: data.cover_url
+      };
+    }
+
+    const local = getLocalJourney(id);
+    if (local) {
+      return {
+        ...local,
+        segments: []
+      };
+    }
+    return null;
   }
 
   async function createJourney(title) {
@@ -304,12 +442,49 @@
     deleteLocalJourney(id);
   }
 
+  async function deleteSegment(journeyId, editIdx) {
+    if (!(await isLoggedIn())) {
+      const journey = await getJourney(journeyId);
+      if (!journey) throw new Error('旅程不存在');
+      if (!journey.segments) journey.segments = [];
+      if (editIdx >= 0 && editIdx < journey.segments.length) {
+        journey.segments.splice(editIdx, 1);
+        saveLocalJourney(journey);
+      }
+      return journey;
+    }
+
+    const { data: existingSegs, error: findErr } = await supabaseClient
+      .from('segments')
+      .select('id')
+      .eq('journey_id', journeyId)
+      .order('day_index', { ascending: true });
+    if (findErr) throw findErr;
+
+    const target = (existingSegs || [])[editIdx];
+    if (!target) throw new Error('要删除的记录不存在');
+
+    const { error: delErr } = await supabaseClient
+      .from('segments')
+      .delete()
+      .eq('id', target.id);
+    if (delErr) throw delErr;
+
+    await updateJourneyTotals(journeyId);
+    return fetchJourneyWithData(journeyId);
+  }
+
   async function endJourney(id) {
     const journey = await getJourney(id);
     if (!journey) throw new Error('旅程不存在');
     journey.status = 'completed';
     journey.completedAt = new Date().toISOString().slice(0, 10);
-    return updateJourney(journey);
+    const updated = await updateJourney(journey);
+    if (!updated) {
+      console.error('[journeyService] endJourney: update succeeded but fetch returned null, id:', id);
+      throw new Error('结束旅程后无法读取旅程数据，请检查登录状态或刷新页面');
+    }
+    return updated;
   }
 
   async function saveSegment(journeyId, segment, editIdx) {
@@ -339,49 +514,90 @@
     if (!journeyRow) throw new Error('旅程不存在或无权限');
 
     let segmentId;
+    let isUpdate = editIdx >= 0;
 
-    if (editIdx >= 0) {
-      const { data: existingSegs, error: findErr } = await supabaseClient
+    if (!isUpdate) {
+      // Guard against double-submit creating duplicate day records
+      const { data: sameDaySeg, error: sdErr } = await supabaseClient
         .from('segments')
-        .select('id, day_index')
+        .select('id')
         .eq('journey_id', journeyId)
-        .order('day_index', { ascending: true });
-      if (findErr) throw findErr;
+        .eq('day_index', segment.day)
+        .maybeSingle();
+      if (sdErr) throw sdErr;
+      if (sameDaySeg) {
+        isUpdate = true;
+        segmentId = sameDaySeg.id;
+      }
+    }
 
-      const target = (existingSegs || [])[editIdx];
-      if (!target) throw new Error('要编辑的记录不存在');
-      segmentId = target.id;
+    function stripRouteSvg(err) {
+      return err && err.message && err.message.toLowerCase().includes('route_svg');
+    }
 
-      const { error: updErr } = await supabaseClient
+    if (isUpdate) {
+      if (!segmentId) {
+        const { data: existingSegs, error: findErr } = await supabaseClient
+          .from('segments')
+          .select('id, day_index')
+          .eq('journey_id', journeyId)
+          .order('day_index', { ascending: true });
+        if (findErr) throw findErr;
+
+        const target = (existingSegs || [])[editIdx];
+        if (!target) throw new Error('要编辑的记录不存在');
+        segmentId = target.id;
+      }
+
+      let updatePayload = {
+        date: segment.date,
+        note: segment.note,
+        distance: segment.distance || 0,
+        elevation: segment.elevation || 0,
+        elevation_loss: segment.elevationLoss || 0,
+        duration: segment.duration || '-',
+        route_svg: segment.routeSvg || null
+      };
+      let { error: updErr } = await supabaseClient
         .from('segments')
-        .update({
-          date: segment.date,
-          note: segment.note,
-          distance: segment.distance || 0,
-          elevation: segment.elevation || 0,
-          elevation_loss: segment.elevationLoss || 0,
-          duration: segment.duration || '-'
-        })
+        .update(updatePayload)
         .eq('id', segmentId);
+      if (updErr && stripRouteSvg(updErr)) {
+        delete updatePayload.route_svg;
+        ({ error: updErr } = await supabaseClient
+          .from('segments')
+          .update(updatePayload)
+          .eq('id', segmentId));
+      }
       if (updErr) throw updErr;
 
       await supabaseClient.from('photos').delete().eq('segment_id', segmentId);
       await supabaseClient.from('gpx_points').delete().eq('segment_id', segmentId);
     } else {
-      const { data: newSeg, error: insErr } = await supabaseClient
+      let insertPayload = {
+        journey_id: journeyId,
+        day_index: segment.day,
+        date: segment.date,
+        note: segment.note,
+        distance: segment.distance || 0,
+        elevation: segment.elevation || 0,
+        elevation_loss: segment.elevationLoss || 0,
+        duration: segment.duration || '-',
+        route_svg: segment.routeSvg || null
+      };
+      let { data: newSeg, error: insErr } = await supabaseClient
         .from('segments')
-        .insert({
-          journey_id: journeyId,
-          day_index: segment.day,
-          date: segment.date,
-          note: segment.note,
-          distance: segment.distance || 0,
-          elevation: segment.elevation || 0,
-          elevation_loss: segment.elevationLoss || 0,
-          duration: segment.duration || '-'
-        })
+        .insert(insertPayload)
         .select()
         .single();
+      if (insErr && stripRouteSvg(insErr)) {
+        delete insertPayload.route_svg;
+        ({ data: newSeg, error: insErr } = await supabaseClient
+          .from('segments')
+          .insert(insertPayload)
+          .select()
+          .single());
+      }
       if (insErr) throw insErr;
       segmentId = newSeg.id;
     }
@@ -398,15 +614,25 @@
     }
 
     if (segment.gpxPoints?.length) {
-      const gpxRows = segment.gpxPoints.map((pt, i) => ({
-        segment_id: segmentId,
-        lat: pt[0],
-        lng: pt[1],
-        elevation: pt[2] != null ? pt[2] : null,
-        point_index: i
-      }));
-      const { error: gErr } = await supabaseClient.from('gpx_points').insert(gpxRows);
-      if (gErr) throw gErr;
+      const BATCH_SIZE = 1000;
+      console.log('[saveSegment] inserting', segment.gpxPoints.length, 'gpx points for segment', segmentId);
+      for (let i = 0; i < segment.gpxPoints.length; i += BATCH_SIZE) {
+        const batch = segment.gpxPoints.slice(i, i + BATCH_SIZE).map((pt, idx) => ({
+          segment_id: segmentId,
+          lat: pt[0],
+          lng: pt[1],
+          elevation: pt[2] != null ? pt[2] : null,
+          point_index: i + idx
+        }));
+        console.log('[saveSegment] batch', i / BATCH_SIZE + 1, 'size:', batch.length, 'first:', batch[0]);
+        const { error: gErr } = await supabaseClient.from('gpx_points').insert(batch);
+        if (gErr) {
+          console.error('[saveSegment] gpx_points insert error:', gErr);
+          throw gErr;
+        }
+      }
+    } else {
+      console.log('[saveSegment] no gpxPoints to insert for segment', segmentId);
     }
 
     await updateJourneyTotals(journeyId);
@@ -512,9 +738,13 @@
     isLoggedIn,
     getJourneys,
     getJourney,
+    getJourneySummary,
+    getJourneyMinimal,
+    getJourneyForEdit,
     createJourney,
     updateJourney,
     deleteJourney,
+    deleteSegment,
     endJourney,
     saveSegment,
     migrateLocalStorage

@@ -22,7 +22,15 @@
   </div>
 
   <!-- Feed Cards -->
-  <div id="feed-container"></div>
+  <div id="feed-container">
+    <div id="feed-loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:12px;color:var(--text-secondary);font-size:14px;">
+      <div style="width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:feed-loading-spin 1s linear infinite;"></div>
+      <span>加载中...</span>
+    </div>
+    <style>
+      @keyframes feed-loading-spin { to { transform: rotate(360deg); } }
+    </style>
+  </div>
 
   <!-- Bottom Nav -->
   <nav class="bottom-nav">
@@ -38,15 +46,33 @@
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js"></script>
-  <script src="js/journey-service.js"></script>
+  <script src="js/app.js?v=13"></script>
+  <script src="js/journey-service.js?v=13"></script>
   <script>
     function getCoverUrl(j) {
+      if (j.coverUrl) return j.coverUrl;
       const urls = [];
       (j.segments || []).forEach(s => { if (s.photoUrls) urls.push(...s.photoUrls); });
       if (urls.length === 0) return null;
       const hash = String(j.id).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
       return urls[hash % urls.length];
+    }
+
+    function getCoverSvg(j) {
+      if (j.coverSvg) return j.coverSvg;
+      const segs = j.segments || [];
+      for (const s of segs) {
+        if (s.routeSvg) return s.routeSvg;
+      }
+      return null;
+    }
+
+    function renderSvgCover(svg, containerId, width = '100%', height = '100%') {
+      return `
+        <div id="${containerId}" style="width:${width};height:${height};border-radius:10px;overflow:hidden;background:#edf3ea;">
+          ${svg.replace(/width="100%"/g, `width="${width}"`).replace(/height="100%"/g, `height="${height}"`)}
+        </div>
+      `;
     }
 
     async function renderFeeds() {
@@ -84,13 +110,13 @@
         const isOngoing = ongoing.some(o => o.id === j.id);
 
         const coverUrl = getCoverUrl(j);
-        const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
+        const coverSvg = getCoverSvg(j);
 
         let coverHtml;
         if (coverUrl) {
           coverHtml = `<img class="card-image" src="${coverUrl}" alt="${j.title}">`;
-        } else if (hasGpx) {
-          coverHtml = `<div class="card-image" id="mini-map-${j.id}" style="position:relative;overflow:hidden;"></div>`;
+        } else if (coverSvg) {
+          coverHtml = renderSvgCover(coverSvg, `mini-map-${j.id}`, '100%', '220px').replace('border-radius:10px', 'border-radius:0');
         } else {
           coverHtml = `<img class="card-image" src="https://images.unsplash.com/photo-1541625602330-2277a4c46182?w=600" alt="${j.title}">`;
         }
@@ -155,49 +181,6 @@
       `);
 
       container.innerHTML = [...userCards, ...sampleCards].join('');
-
-      // Initialize mini Leaflet maps for user journeys without photos
-      const colors = ['#FF7B3D', '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
-      allFeedJourneys.forEach(j => {
-        const segs = j.segments || [];
-        const hasPhoto = segs.some(s => s.photoUrls && s.photoUrls.length > 0);
-        const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
-        if (hasPhoto || !hasGpx) return;
-
-        const mapEl = document.getElementById(`mini-map-${j.id}`);
-        if (!mapEl) return;
-
-        let allPoints = [];
-        segs.forEach(s => { if (s.gpxPoints) allPoints = allPoints.concat(s.gpxPoints); });
-        if (allPoints.length < 2) return;
-
-        const miniMap = L.map(mapEl, {
-          dragging: false,
-          scrollWheelZoom: false,
-          zoomControl: false,
-          attributionControl: false,
-          boxZoom: false,
-          doubleClickZoom: false,
-          keyboard: false
-        });
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: ''
-        }).addTo(miniMap);
-
-        segs.forEach((s, idx) => {
-          if (s.gpxPoints && s.gpxPoints.length > 0) {
-            L.polyline(s.gpxPoints, {
-              color: colors[idx % colors.length],
-              weight: 3,
-              opacity: 0.9
-            }).addTo(miniMap);
-          }
-        });
-
-        const bounds = L.latLngBounds(allPoints.map(p => L.latLng(p[0], p[1])));
-        miniMap.fitBounds(bounds, { padding: [10, 10], maxZoom: 14 });
-      });
     }
 
     renderFeeds();
