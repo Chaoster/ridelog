@@ -150,6 +150,7 @@
     let hoverMarker = null;
     let pinSize = 36;
     let routeWeight = 4;
+    let routeSvg = '';
     let currentElevGain = 0;
     let currentElevLoss = 0;
     let currentDistance = 0;
@@ -229,6 +230,7 @@
           return [p.lat, p.lon, p.ele != null ? p.ele : null];
         });
         rawGpxPoints = gpxPoints.map(p => ({ lat: p[0], lon: p[1], ele: p[2] }));
+        routeSvg = existingSeg.routeSvg || generateRouteSvg(gpxPoints, 100);
 
         const validCount = gpxPoints.filter(p => !isNaN(p[0]) && !isNaN(p[1])).length;
         console.log('[daily-segment edit] normalized gpxPoints length:', gpxPoints.length, 'valid:', validCount, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
@@ -738,6 +740,7 @@
 
         gpxPoints = rawPoints.map(p => [p.lat, p.lon, p.ele]);
         rawGpxPoints = rawPoints;
+        routeSvg = generateRouteSvg(gpxPoints, 100);
 
         let totalDist = 0;
         const dists = [0];
@@ -844,6 +847,7 @@
         photoUrls: photos.map(p => p.url),
         gpx: gpxPoints.length > 0,
         gpxPoints: gpxPoints,
+        routeSvg: routeSvg,
         distance: Math.round(currentDistance) || 0,
         elevation: Math.round(currentElevGain) || 0,
         elevationLoss: Math.round(currentElevLoss) || 0,

@@ -78,6 +78,7 @@
           photoUrls: photos.map(p => p.url),
           gpx: gpxPoints.length > 0,
           gpxPoints,
+          routeSvg: seg.route_svg || '',
           distance: Number(seg.distance) || 0,
           elevation: Number(seg.elevation) || 0,
           elevationLoss: Number(seg.elevation_loss) || 0,
@@ -421,6 +422,10 @@
       }
     }
 
+    function stripRouteSvg(err) {
+      return err && err.message && err.message.toLowerCase().includes('route_svg');
+    }
+
     if (isUpdate) {
       if (!segmentId) {
         const { data: existingSegs, error: findErr } = await supabaseClient
@@ -435,36 +440,55 @@
         segmentId = target.id;
       }
 
-      const { error: updErr } = await supabaseClient
+      let updatePayload = {
+        date: segment.date,
+        note: segment.note,
+        distance: segment.distance || 0,
+        elevation: segment.elevation || 0,
+        elevation_loss: segment.elevationLoss || 0,
+        duration: segment.duration || '-',
+        route_svg: segment.routeSvg || null
+      };
+      let { error: updErr } = await supabaseClient
         .from('segments')
-        .update({
-          date: segment.date,
-          note: segment.note,
-          distance: segment.distance || 0,
-          elevation: segment.elevation || 0,
-          elevation_loss: segment.elevationLoss || 0,
-          duration: segment.duration || '-'
-        })
+        .update(updatePayload)
         .eq('id', segmentId);
+      if (updErr && stripRouteSvg(updErr)) {
+        delete updatePayload.route_svg;
+        ({ error: updErr } = await supabaseClient
+          .from('segments')
+          .update(updatePayload)
+          .eq('id', segmentId));
+      }
       if (updErr) throw updErr;
 
       await supabaseClient.from('photos').delete().eq('segment_id', segmentId);
       await supabaseClient.from('gpx_points').delete().eq('segment_id', segmentId);
     } else {
-      const { data: newSeg, error: insErr } = await supabaseClient
+      let insertPayload = {
+        journey_id: journeyId,
+        day_index: segment.day,
+        date: segment.date,
+        note: segment.note,
+        distance: segment.distance || 0,
+        elevation: segment.elevation || 0,
+        elevation_loss: segment.elevationLoss || 0,
+        duration: segment.duration || '-',
+        route_svg: segment.routeSvg || null
+      };
+      let { data: newSeg, error: insErr } = await supabaseClient
         .from('segments')
-        .insert({
-          journey_id: journeyId,
-          day_index: segment.day,
-          date: segment.date,
-          note: segment.note,
-          distance: segment.distance || 0,
-          elevation: segment.elevation || 0,
-          elevation_loss: segment.elevationLoss || 0,
-          duration: segment.duration || '-'
-        })
+        .insert(insertPayload)
         .select()
         .single();
+      if (insErr && stripRouteSvg(insErr)) {
+        delete insertPayload.route_svg;
+        ({ data: newSeg, error: insErr } = await supabaseClient
+          .from('segments')
+          .insert(insertPayload)
+          .select()
+          .single());
+      }
       if (insErr) throw insErr;
       segmentId = newSeg.id;
     }

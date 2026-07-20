@@ -126,95 +126,6 @@
       renderSegments();
     }
 
-    // Generate SVG route snapshot from GPX points with map-like background
-    function generateRouteSvg(gpxPoints, size = 100) {
-      try {
-        if (!gpxPoints || gpxPoints.length < 2) return '';
-
-        // Validate points format [lat, lon]
-        const pts = gpxPoints
-          .filter(p => Array.isArray(p) && p.length >= 2 && typeof p[0] === 'number' && typeof p[1] === 'number')
-          .map(p => ({ lat: p[0], lon: p[1] }));
-
-        if (pts.length < 2) return '';
-
-        const minLat = Math.min(...pts.map(p => p.lat));
-        const maxLat = Math.max(...pts.map(p => p.lat));
-        const minLon = Math.min(...pts.map(p => p.lon));
-        const maxLon = Math.max(...pts.map(p => p.lon));
-
-        if (!isFinite(minLat) || !isFinite(maxLat) || !isFinite(minLon) || !isFinite(maxLon)) return '';
-
-        // Add padding
-        const latPad = (maxLat - minLat) * 0.15 || 0.01;
-        const lonPad = (maxLon - minLon) * 0.15 || 0.01;
-
-        const latRange = (maxLat + latPad) - (minLat - latPad);
-        const lonRange = (maxLon + lonPad) - (minLon - lonPad);
-
-        // Preserve aspect ratio: use a single scale for both axes
-        const scale = Math.max(lonRange / size, latRange / size) || 0.0001;
-        const xOffset = minLon - lonPad;
-        const yOffset = minLat - latPad;
-        const xPad = (size - lonRange / scale) / 2;
-        const yPad = (size - latRange / scale) / 2;
-
-        const mapX = lon => xPad + (lon - xOffset) / scale;
-        const mapY = lat => size - yPad - (lat - yOffset) / scale;
-
-        const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${mapX(p.lon).toFixed(1)},${mapY(p.lat).toFixed(1)}`).join(' ');
-        const sx = mapX(pts[0].lon).toFixed(1);
-        const sy = mapY(pts[0].lat).toFixed(1);
-        const ex = mapX(pts[pts.length - 1].lon).toFixed(1);
-        const ey = mapY(pts[pts.length - 1].lat).toFixed(1);
-
-        // Build map-like background: grid lines + random blocks
-        let bgElements = '';
-        const gridStep = size / 6;
-        for (let i = 0; i <= 6; i++) {
-          const pos = (i * gridStep).toFixed(1);
-          bgElements += `<line x1="${pos}" y1="0" x2="${pos}" y2="${size}" stroke="#dce5d8" stroke-width="0.8"/>`;
-          bgElements += `<line x1="0" y1="${pos}" x2="${size}" y2="${pos}" stroke="#dce5d8" stroke-width="0.8"/>`;
-        }
-        // Add some random "blocks" to simulate buildings/land features
-        const seed = pts.length;
-        const blocks = [
-          { x: 5, y: 5, w: 12, h: 10 },
-          { x: 22, y: 8, w: 8, h: 12 },
-          { x: 55, y: 15, w: 15, h: 8 },
-          { x: 75, y: 5, w: 10, h: 10 },
-          { x: 8, y: 35, w: 10, h: 15 },
-          { x: 35, y: 40, w: 12, h: 8 },
-          { x: 60, y: 35, w: 10, h: 12 },
-          { x: 82, y: 38, w: 10, h: 10 },
-          { x: 15, y: 65, w: 15, h: 10 },
-          { x: 40, y: 70, w: 10, h: 10 },
-          { x: 65, y: 65, w: 12, h: 12 },
-          { x: 85, y: 72, w: 8, h: 8 },
-          { x: 5, y: 85, w: 10, h: 10 },
-          { x: 30, y: 88, w: 12, h: 8 },
-          { x: 55, y: 85, w: 10, h: 10 },
-          { x: 78, y: 88, w: 12, h: 8 },
-        ];
-        blocks.forEach(b => {
-          bgElements += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="2" fill="#dbe7d6" opacity="0.6"/>`;
-        });
-
-        return `
-          <svg width="100%" height="100%" viewBox="0 0 ${size} ${size}" style="border-radius:8px;display:block;">
-            <rect width="${size}" height="${size}" fill="#edf3ea"/>
-            ${bgElements}
-            <path d="${pathD}" fill="none" stroke="#FF7B3D" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="${sx}" cy="${sy}" r="4.5" fill="#2ecc71" stroke="white" stroke-width="2"/>
-            <circle cx="${ex}" cy="${ey}" r="4.5" fill="#e74c3c" stroke="white" stroke-width="2"/>
-          </svg>
-        `;
-      } catch (e) {
-        console.error('generateRouteSvg error:', e);
-        return '';
-      }
-    }
-
     function renderSegments() {
       const segs = journey.segments || [];
       console.log('renderSegments, count:', segs.length, 'data:', segs);
@@ -254,7 +165,7 @@
 
           // Route snapshot (always present if GPX)
           if (hasGpx && gpxPoints.length > 0) {
-            const svg = generateRouteSvg(gpxPoints);
+            const svg = seg.routeSvg || generateRouteSvg(gpxPoints);
             if (svg) images.push(svg);
           }
 
