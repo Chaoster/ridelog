@@ -110,7 +110,7 @@
       }
 
       try {
-        journey = await window.journeyService.getJourney(journeyId);
+        journey = await window.journeyService.getJourneySummary(journeyId);
       } catch (err) {
         console.error('[ongoing] load journey error:', err);
       }

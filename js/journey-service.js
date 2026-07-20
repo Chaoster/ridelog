@@ -118,7 +118,7 @@
     return allRows;
   }
 
-  async function fetchJourneyWithData(journeyId, { detail = false } = {}) {
+  async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false } = {}) {
     const { data: journeyRow, error: jErr } = await supabaseClient
       .from('journeys')
       .select('*')
@@ -137,19 +137,25 @@
     let photoRows = [];
     let gpxRows = [];
 
-    if (detail && segmentIds.length) {
-      for (const segId of segmentIds) {
-        try {
-          const segPhotos = await fetchRowsForSegment('photos', segId, 'created_at');
-          photoRows.push(...segPhotos);
-        } catch (e) {
-          console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
+    if (segmentIds.length) {
+      if (includePhotos) {
+        for (const segId of segmentIds) {
+          try {
+            const segPhotos = await fetchRowsForSegment('photos', segId, 'created_at');
+            photoRows.push(...segPhotos);
+          } catch (e) {
+            console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
+          }
         }
-        try {
-          const segGpx = await fetchRowsForSegment('gpx_points', segId, 'point_index');
-          gpxRows.push(...segGpx);
-        } catch (e) {
-          console.error('[fetchJourneyWithData] gpx_points fetch error for segment', segId, e);
+      }
+      if (includeGpx) {
+        for (const segId of segmentIds) {
+          try {
+            const segGpx = await fetchRowsForSegment('gpx_points', segId, 'point_index');
+            gpxRows.push(...segGpx);
+          } catch (e) {
+            console.error('[fetchJourneyWithData] gpx_points fetch error for segment', segId, e);
+          }
         }
       }
     }
@@ -158,7 +164,7 @@
   }
 
   async function updateJourneyTotals(journeyId) {
-    const journey = await fetchJourneyWithData(journeyId);
+    const journey = await fetchJourneyWithData(journeyId, { includePhotos: true, includeGpx: false });
     const totalDist = journey.segments.reduce((s, seg) => s + (seg.distance || 0), 0);
     const totalElev = journey.segments.reduce((s, seg) => s + (seg.elevation || 0), 0);
     const coverUrl = coverUrlFromSegments(journey.segments);
@@ -241,7 +247,7 @@
 
       const results = await Promise.all((journeyRows || []).map(async j => {
         try {
-          return await fetchJourneyWithData(j.id, { detail: false });
+          return await fetchJourneyWithData(j.id, { includePhotos: false, includeGpx: false });
         } catch (err) {
           console.error('[journeyService] fetch journey summary error, id:', j.id, err);
           return null;
@@ -254,9 +260,16 @@
     return getLocalJourneys(status);
   }
 
+  async function getJourneySummary(id) {
+    if (await isLoggedIn()) {
+      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: false });
+    }
+    return getLocalJourney(id);
+  }
+
   async function getJourney(id) {
     if (await isLoggedIn()) {
-      return fetchJourneyWithData(id, { detail: true });
+      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: true });
     }
     return getLocalJourney(id);
   }
@@ -629,6 +642,7 @@
     isLoggedIn,
     getJourneys,
     getJourney,
+    getJourneySummary,
     createJourney,
     updateJourney,
     deleteJourney,
