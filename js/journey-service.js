@@ -255,7 +255,7 @@
 
   async function getJourney(id) {
     if (await isLoggedIn()) {
-      return fetchJourneyWithData(id);
+      return fetchJourneyWithData(id, { detail: true });
     }
     return getLocalJourney(id);
   }
