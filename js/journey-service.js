@@ -127,7 +127,8 @@
       const { data: gRows, error: gErr } = await supabaseClient
         .from('gpx_points')
         .select('*')
-        .in('segment_id', segmentIds);
+        .in('segment_id', segmentIds)
+        .limit(100000);
       if (gErr) throw gErr;
       gpxRows = gRows || [];
     }
@@ -453,18 +454,22 @@
     }
 
     if (segment.gpxPoints?.length) {
-      const gpxRows = segment.gpxPoints.map((pt, i) => ({
-        segment_id: segmentId,
-        lat: pt[0],
-        lng: pt[1],
-        elevation: pt[2] != null ? pt[2] : null,
-        point_index: i
-      }));
-      console.log('[saveSegment] inserting gpxRows for segment', segmentId, 'count:', gpxRows.length, 'first 3:', gpxRows.slice(0, 3), 'last:', gpxRows[gpxRows.length - 1]);
-      const { error: gErr } = await supabaseClient.from('gpx_points').insert(gpxRows);
-      if (gErr) {
-        console.error('[saveSegment] gpx_points insert error:', gErr);
-        throw gErr;
+      const BATCH_SIZE = 1000;
+      console.log('[saveSegment] inserting', segment.gpxPoints.length, 'gpx points for segment', segmentId);
+      for (let i = 0; i < segment.gpxPoints.length; i += BATCH_SIZE) {
+        const batch = segment.gpxPoints.slice(i, i + BATCH_SIZE).map((pt, idx) => ({
+          segment_id: segmentId,
+          lat: pt[0],
+          lng: pt[1],
+          elevation: pt[2] != null ? pt[2] : null,
+          point_index: i + idx
+        }));
+        console.log('[saveSegment] batch', i / BATCH_SIZE + 1, 'size:', batch.length, 'first:', batch[0]);
+        const { error: gErr } = await supabaseClient.from('gpx_points').insert(batch);
+        if (gErr) {
+          console.error('[saveSegment] gpx_points insert error:', gErr);
+          throw gErr;
+        }
       }
     } else {
       console.log('[saveSegment] no gpxPoints to insert for segment', segmentId);
