@@ -122,7 +122,7 @@
     return allRows;
   }
 
-  async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false } = {}) {
+  async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false, editIdx = -1 } = {}) {
     const { data: journeyRow, error: jErr } = await supabaseClient
       .from('journeys')
       .select('*')
@@ -142,8 +142,13 @@
     let gpxRows = [];
 
     if (segmentIds.length) {
+      // For edit mode, only load full gpx/photos for the target segment
+      const targetIds = editIdx >= 0 && segmentRows[editIdx]
+        ? [segmentRows[editIdx].id]
+        : segmentIds;
+
       if (includePhotos) {
-        for (const segId of segmentIds) {
+        for (const segId of targetIds) {
           try {
             const segPhotos = await fetchRowsForSegment('photos', segId, 'created_at');
             photoRows.push(...segPhotos);
@@ -153,7 +158,7 @@
         }
       }
       if (includeGpx) {
-        for (const segId of segmentIds) {
+        for (const segId of targetIds) {
           try {
             const segGpx = await fetchRowsForSegment('gpx_points', segId, 'point_index');
             gpxRows.push(...segGpx);
@@ -267,6 +272,13 @@
   async function getJourneySummary(id) {
     if (await isLoggedIn()) {
       return fetchJourneyWithData(id, { includePhotos: true, includeGpx: false });
+    }
+    return getLocalJourney(id);
+  }
+
+  async function getJourneyForEdit(id, editIdx) {
+    if (await isLoggedIn()) {
+      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: true, editIdx });
     }
     return getLocalJourney(id);
   }
@@ -647,6 +659,7 @@
     getJourneys,
     getJourney,
     getJourneySummary,
+    getJourneyForEdit,
     createJourney,
     updateJourney,
     deleteJourney,

@@ -168,7 +168,11 @@
       }
 
       try {
-        journey = await window.journeyService.getJourney(journeyId);
+        if (isEdit && editIdx >= 0) {
+          journey = await window.journeyService.getJourneyForEdit(journeyId, editIdx);
+        } else {
+          journey = await window.journeyService.getJourney(journeyId);
+        }
       } catch (err) {
         console.error('[daily-segment] load journey error:', err);
       }
