@@ -460,8 +460,14 @@
         elevation: pt[2] != null ? pt[2] : null,
         point_index: i
       }));
+      console.log('[saveSegment] inserting gpxRows for segment', segmentId, 'count:', gpxRows.length, 'first:', gpxRows[0]);
       const { error: gErr } = await supabaseClient.from('gpx_points').insert(gpxRows);
-      if (gErr) throw gErr;
+      if (gErr) {
+        console.error('[saveSegment] gpx_points insert error:', gErr);
+        throw gErr;
+      }
+    } else {
+      console.log('[saveSegment] no gpxPoints to insert for segment', segmentId);
     }
 
     await updateJourneyTotals(journeyId);
