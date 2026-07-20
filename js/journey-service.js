@@ -117,7 +117,7 @@
     return allRows;
   }
 
-  async function fetchJourneyWithData(journeyId) {
+  async function fetchJourneyWithData(journeyId, { detail = false } = {}) {
     const { data: journeyRow, error: jErr } = await supabaseClient
       .from('journeys')
       .select('*')
@@ -136,7 +136,7 @@
     let photoRows = [];
     let gpxRows = [];
 
-    if (segmentIds.length) {
+    if (detail && segmentIds.length) {
       for (const segId of segmentIds) {
         try {
           const segPhotos = await fetchRowsForSegment('photos', segId, 'created_at');
@@ -240,9 +240,9 @@
 
       const results = await Promise.all((journeyRows || []).map(async j => {
         try {
-          return await fetchJourneyWithData(j.id);
+          return await fetchJourneyWithData(j.id, { detail: false });
         } catch (err) {
-          console.error('[journeyService] fetch journey detail error, id:', j.id, err);
+          console.error('[journeyService] fetch journey summary error, id:', j.id, err);
           return null;
         }
       }));
