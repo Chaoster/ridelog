@@ -793,11 +793,18 @@
     }
 
     async function saveSegment() {
+      const saveBtn = document.querySelector('.btn-primary');
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+
       const date = document.getElementById('date-input').value;
       const note = document.getElementById('note-input').value;
 
       if (!note.trim()) {
         alert('请填写今日笔记');
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存本日';
         return;
       }
 
@@ -823,6 +830,8 @@
       } catch (err) {
         console.error('[daily-segment] save segment error:', err);
         alert('保存失败：' + err.message);
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存本日';
       }
     }
   </script>

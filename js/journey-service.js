@@ -339,18 +339,36 @@
     if (!journeyRow) throw new Error('旅程不存在或无权限');
 
     let segmentId;
+    let isUpdate = editIdx >= 0;
 
-    if (editIdx >= 0) {
-      const { data: existingSegs, error: findErr } = await supabaseClient
+    if (!isUpdate) {
+      // Guard against double-submit creating duplicate day records
+      const { data: sameDaySeg, error: sdErr } = await supabaseClient
         .from('segments')
-        .select('id, day_index')
+        .select('id')
         .eq('journey_id', journeyId)
-        .order('day_index', { ascending: true });
-      if (findErr) throw findErr;
+        .eq('day_index', segment.day)
+        .maybeSingle();
+      if (sdErr) throw sdErr;
+      if (sameDaySeg) {
+        isUpdate = true;
+        segmentId = sameDaySeg.id;
+      }
+    }
 
-      const target = (existingSegs || [])[editIdx];
-      if (!target) throw new Error('要编辑的记录不存在');
-      segmentId = target.id;
+    if (isUpdate) {
+      if (!segmentId) {
+        const { data: existingSegs, error: findErr } = await supabaseClient
+          .from('segments')
+          .select('id, day_index')
+          .eq('journey_id', journeyId)
+          .order('day_index', { ascending: true });
+        if (findErr) throw findErr;
+
+        const target = (existingSegs || [])[editIdx];
+        if (!target) throw new Error('要编辑的记录不存在');
+        segmentId = target.id;
+      }
 
       const { error: updErr } = await supabaseClient
         .from('segments')
