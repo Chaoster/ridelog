@@ -86,6 +86,10 @@
         };
       });
 
+    if (segments.length > 0) {
+      console.log('[buildJourney] segments built, first routeSvg length:', (segments[0].routeSvg || '').length);
+    }
+
     return {
       id: journeyRow.id,
       title: journeyRow.title,

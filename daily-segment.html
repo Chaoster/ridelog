@@ -741,6 +741,7 @@
         gpxPoints = rawPoints.map(p => [p.lat, p.lon, p.ele]);
         rawGpxPoints = rawPoints;
         routeSvg = generateRouteSvg(gpxPoints, 100);
+        console.log('[daily-segment handleGPX] generated routeSvg length:', routeSvg ? routeSvg.length : 0);
 
         let totalDist = 0;
         const dists = [0];
@@ -855,6 +856,7 @@
       };
 
       console.log('[daily-segment save] gpxPoints count:', gpxPoints.length, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
+      console.log('[daily-segment save] routeSvg length:', segmentData.routeSvg ? segmentData.routeSvg.length : 0);
 
       try {
         const updated = await window.journeyService.saveSegment(journeyId, segmentData, isEdit ? editIdx : -1);
