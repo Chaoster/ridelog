@@ -15,9 +15,22 @@
   <div class="page-header">
     <button class="back-btn" onclick="goBack()">&#8249;</button>
     <div class="page-title">旅程进行中</div>
-    <button style="margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="endJourney()">
+    <button style="margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteJourneyModal()">删除</button>
+    <button style="margin-left:8px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;cursor:pointer;" onclick="endJourney()">
       结束旅程
     </button>
+  </div>
+
+  <!-- Modal: Delete Journey Confirmation -->
+  <div class="modal-overlay" id="delete-journey-modal">
+    <div class="modal">
+      <div class="modal-title">删除旅程</div>
+      <div class="modal-desc">确定要删除这个旅程吗？所有每日记录和照片都会被删除，此操作不可恢复。</div>
+      <div class="action-row" style="margin:0;">
+        <button class="btn btn-secondary" onclick="document.getElementById('delete-journey-modal').classList.remove('active')">取消</button>
+        <button class="btn btn-accent" onclick="confirmDeleteJourney()">确认删除</button>
+      </div>
+    </div>
   </div>
 
   <!-- Journey Title -->
@@ -291,6 +304,22 @@
     function addSegment() {
       const nextDay = (journey?.segments || []).length + 1;
       location.href = `daily-segment.html?day=${nextDay}&journeyId=${journey.id}&journey=${encodeURIComponent(journey.title)}`;
+    }
+
+    function showDeleteJourneyModal() {
+      document.getElementById('delete-journey-modal').classList.add('active');
+    }
+
+    async function confirmDeleteJourney() {
+      document.getElementById('delete-journey-modal').classList.remove('active');
+
+      try {
+        await window.journeyService.deleteJourney(journeyId);
+        alert('旅程已删除');
+        location.href = 'my-records.html';
+      } catch (err) {
+        alert('删除旅程失败：' + err.message);
+      }
     }
 
     function endJourney() {
