@@ -15,6 +15,19 @@
   <div class="page-header">
     <button class="back-btn" onclick="history.back()">&#8249;</button>
     <div class="page-title" id="page-title">每日记录</div>
+    <button id="delete-btn" style="display:none;margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteModal()">删除</button>
+  </div>
+
+  <!-- Delete Modal -->
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal">
+      <div class="modal-title">删除记录</div>
+      <div class="modal-desc">确定要删除这条每日记录吗？此操作不可恢复。</div>
+      <div class="action-row" style="margin:0;">
+        <button class="btn btn-secondary" onclick="document.getElementById('delete-modal').classList.remove('active')">取消</button>
+        <button class="btn btn-accent" onclick="confirmDeleteSegment()">确认删除</button>
+      </div>
+    </div>
   </div>
 
   <!-- Day Badge -->
@@ -175,6 +188,7 @@
       if (isEdit && editIdx >= 0 && journey && journey.segments && journey.segments[editIdx]) {
       existingSeg = journey.segments[editIdx];
       document.getElementById('page-title').textContent = '编辑记录';
+      document.getElementById('delete-btn').style.display = 'block';
 
       // Prefill form
       document.getElementById('date-input').value = existingSeg.date || '';
@@ -832,6 +846,24 @@
         alert('保存失败：' + err.message);
         saveBtn.disabled = false;
         saveBtn.textContent = '保存本日';
+      }
+    }
+
+    function showDeleteModal() {
+      if (!isEdit) return;
+      document.getElementById('delete-modal').classList.add('active');
+    }
+
+    async function confirmDeleteSegment() {
+      document.getElementById('delete-modal').classList.remove('active');
+      if (!isEdit || editIdx < 0) return;
+
+      try {
+        await window.journeyService.deleteSegment(journeyId, editIdx);
+        location.href = `ongoing.html?id=${journeyId}`;
+      } catch (err) {
+        console.error('[daily-segment] delete segment error:', err);
+        alert('删除失败：' + err.message);
       }
     }
   </script>

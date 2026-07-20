@@ -304,6 +304,38 @@
     deleteLocalJourney(id);
   }
 
+  async function deleteSegment(journeyId, editIdx) {
+    if (!(await isLoggedIn())) {
+      const journey = await getJourney(journeyId);
+      if (!journey) throw new Error('旅程不存在');
+      if (!journey.segments) journey.segments = [];
+      if (editIdx >= 0 && editIdx < journey.segments.length) {
+        journey.segments.splice(editIdx, 1);
+        saveLocalJourney(journey);
+      }
+      return journey;
+    }
+
+    const { data: existingSegs, error: findErr } = await supabaseClient
+      .from('segments')
+      .select('id')
+      .eq('journey_id', journeyId)
+      .order('day_index', { ascending: true });
+    if (findErr) throw findErr;
+
+    const target = (existingSegs || [])[editIdx];
+    if (!target) throw new Error('要删除的记录不存在');
+
+    const { error: delErr } = await supabaseClient
+      .from('segments')
+      .delete()
+      .eq('id', target.id);
+    if (delErr) throw delErr;
+
+    await updateJourneyTotals(journeyId);
+    return fetchJourneyWithData(journeyId);
+  }
+
   async function endJourney(id) {
     const journey = await getJourney(id);
     if (!journey) throw new Error('旅程不存在');
@@ -533,6 +565,7 @@
     createJourney,
     updateJourney,
     deleteJourney,
+    deleteSegment,
     endJourney,
     saveSegment,
     migrateLocalStorage
