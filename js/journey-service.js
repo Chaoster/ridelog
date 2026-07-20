@@ -97,6 +97,28 @@
     };
   }
 
+  async function fetchAllRows(table, segmentIds, orderColumns) {
+    const allRows = [];
+    const batchSize = 1000;
+    let from = 0;
+    while (true) {
+      let query = supabaseClient
+        .from(table)
+        .select('*')
+        .in('segment_id', segmentIds);
+      orderColumns.forEach(col => {
+        query = query.order(col, { ascending: true });
+      });
+      const { data, error } = await query.range(from, from + batchSize - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allRows.push(...data);
+      if (data.length < batchSize) break;
+      from += batchSize;
+    }
+    return allRows;
+  }
+
   async function fetchJourneyWithData(journeyId) {
     const { data: journeyRow, error: jErr } = await supabaseClient
       .from('journeys')
@@ -117,20 +139,8 @@
     let gpxRows = [];
 
     if (segmentIds.length) {
-      const { data: pRows, error: pErr } = await supabaseClient
-        .from('photos')
-        .select('*')
-        .in('segment_id', segmentIds);
-      if (pErr) throw pErr;
-      photoRows = pRows || [];
-
-      const { data: gRows, error: gErr } = await supabaseClient
-        .from('gpx_points')
-        .select('*')
-        .in('segment_id', segmentIds)
-        .limit(100000);
-      if (gErr) throw gErr;
-      gpxRows = gRows || [];
+      photoRows = await fetchAllRows('photos', segmentIds, ['segment_id', 'created_at']);
+      gpxRows = await fetchAllRows('gpx_points', segmentIds, ['segment_id', 'point_index']);
     }
 
     return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows);
