@@ -164,7 +164,7 @@
           const images = [];
 
           // Route snapshot (always present if GPX)
-          if (hasGpx && gpxPoints.length > 0) {
+          if (seg.routeSvg || (hasGpx && gpxPoints.length > 0)) {
             const svg = seg.routeSvg || generateRouteSvg(gpxPoints);
             console.log('[renderSegments] routeSvg length:', (seg.routeSvg || '').length, 'fallback:', !seg.routeSvg, 'svg length:', (svg || '').length);
             if (svg) images.push(svg);
