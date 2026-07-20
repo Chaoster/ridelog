@@ -217,6 +217,8 @@
 
       // Prefill GPX route
       if (existingSeg.gpxPoints && existingSeg.gpxPoints.length > 0) {
+        console.log('[daily-segment edit] existingSeg.gpxPoints count:', existingSeg.gpxPoints.length, 'first:', existingSeg.gpxPoints[0], 'last:', existingSeg.gpxPoints[existingSeg.gpxPoints.length - 1]);
+
         // Normalize stored points: may be old [lat,lon] arrays, [lat,lon,ele] arrays, or {lat,lon,ele} objects
         gpxPoints = existingSeg.gpxPoints.map(p => {
           if (Array.isArray(p)) {
@@ -225,6 +227,8 @@
           return [p.lat, p.lon, p.ele != null ? p.ele : null];
         });
         rawGpxPoints = gpxPoints.map(p => ({ lat: p[0], lon: p[1], ele: p[2] }));
+
+        console.log('[daily-segment edit] normalized gpxPoints count:', gpxPoints.length, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
 
         let totalDist = 0;
         gpxDists = [0];
@@ -836,6 +840,8 @@
         elevationLoss: Math.round(currentElevLoss) || 0,
         duration: formatDuration(currentDurationHours)
       };
+
+      console.log('[daily-segment save] gpxPoints count:', gpxPoints.length, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
 
       try {
         const updated = await window.journeyService.saveSegment(journeyId, segmentData, isEdit ? editIdx : -1);

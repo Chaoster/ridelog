@@ -62,7 +62,12 @@
 
         const gpxPoints = (gpxBySegment[seg.id] || [])
           .sort((a, b) => a.point_index - b.point_index)
-          .map(pt => [Number(pt.lat), Number(pt.lng), pt.elevation != null ? Number(pt.elevation) : null]);
+          .map(pt => [Number(pt.lat), Number(pt.lng), pt.elevation != null ? Number(pt.elevation) : null])
+          .filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+
+        if (gpxPoints.length > 0) {
+          console.log('[buildJourney] segment', seg.id, 'day', seg.day_index, 'gpxPoints count:', gpxPoints.length, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
+        }
 
         return {
           day: seg.day_index,
