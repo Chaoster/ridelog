@@ -60,13 +60,13 @@
           .sort((a, b) => a.created_at - b.created_at)
           .map(p => ({ url: p.url, lat: Number(p.lat) || 0, lng: Number(p.lng) || 0 }));
 
-        const gpxPoints = (gpxBySegment[seg.id] || [])
-          .sort((a, b) => a.point_index - b.point_index)
+        const rawGpxRows = (gpxBySegment[seg.id] || []).sort((a, b) => a.point_index - b.point_index);
+        const gpxPoints = rawGpxRows
           .map(pt => [Number(pt.lat), Number(pt.lng), pt.elevation != null ? Number(pt.elevation) : null])
           .filter(p => !isNaN(p[0]) && !isNaN(p[1]));
 
         if (gpxPoints.length > 0) {
-          console.log('[buildJourney] segment', seg.id, 'day', seg.day_index, 'gpxPoints count:', gpxPoints.length, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
+          console.log('[buildJourney] segment', seg.id, 'day', seg.day_index, 'raw rows:', rawGpxRows.length, 'valid points:', gpxPoints.length, 'first 3 raw:', rawGpxRows.slice(0, 3), 'last raw:', rawGpxRows[rawGpxRows.length - 1]);
         }
 
         return {
@@ -460,7 +460,7 @@
         elevation: pt[2] != null ? pt[2] : null,
         point_index: i
       }));
-      console.log('[saveSegment] inserting gpxRows for segment', segmentId, 'count:', gpxRows.length, 'first:', gpxRows[0]);
+      console.log('[saveSegment] inserting gpxRows for segment', segmentId, 'count:', gpxRows.length, 'first 3:', gpxRows.slice(0, 3), 'last:', gpxRows[gpxRows.length - 1]);
       const { error: gErr } = await supabaseClient.from('gpx_points').insert(gpxRows);
       if (gErr) {
         console.error('[saveSegment] gpx_points insert error:', gErr);

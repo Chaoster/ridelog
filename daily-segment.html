@@ -217,7 +217,9 @@
 
       // Prefill GPX route
       if (existingSeg.gpxPoints && existingSeg.gpxPoints.length > 0) {
-        console.log('[daily-segment edit] existingSeg.gpxPoints count:', existingSeg.gpxPoints.length, 'first:', existingSeg.gpxPoints[0], 'last:', existingSeg.gpxPoints[existingSeg.gpxPoints.length - 1]);
+        console.log('[daily-segment edit] existingSeg.gpxPoints length:', existingSeg.gpxPoints.length);
+        console.log('[daily-segment edit] first 3:', existingSeg.gpxPoints.slice(0, 3));
+        console.log('[daily-segment edit] last 3:', existingSeg.gpxPoints.slice(-3));
 
         // Normalize stored points: may be old [lat,lon] arrays, [lat,lon,ele] arrays, or {lat,lon,ele} objects
         gpxPoints = existingSeg.gpxPoints.map(p => {
@@ -228,7 +230,8 @@
         });
         rawGpxPoints = gpxPoints.map(p => ({ lat: p[0], lon: p[1], ele: p[2] }));
 
-        console.log('[daily-segment edit] normalized gpxPoints count:', gpxPoints.length, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
+        const validCount = gpxPoints.filter(p => !isNaN(p[0]) && !isNaN(p[1])).length;
+        console.log('[daily-segment edit] normalized gpxPoints length:', gpxPoints.length, 'valid:', validCount, 'first:', gpxPoints[0], 'last:', gpxPoints[gpxPoints.length - 1]);
 
         let totalDist = 0;
         gpxDists = [0];
