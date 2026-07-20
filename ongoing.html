@@ -139,9 +139,15 @@
         const latRange = (maxLat + latPad) - (minLat - latPad);
         const lonRange = (maxLon + lonPad) - (minLon - lonPad);
 
-        // Map to SVG coordinates
-        const mapX = lon => ((lon - (minLon - lonPad)) / lonRange) * size;
-        const mapY = lat => size - ((lat - (minLat - latPad)) / latRange) * size;
+        // Preserve aspect ratio: use a single scale for both axes
+        const scale = Math.max(lonRange / size, latRange / size) || 0.0001;
+        const xOffset = minLon - lonPad;
+        const yOffset = minLat - latPad;
+        const xPad = (size - lonRange / scale) / 2;
+        const yPad = (size - latRange / scale) / 2;
+
+        const mapX = lon => xPad + (lon - xOffset) / scale;
+        const mapY = lat => size - yPad - (lat - yOffset) / scale;
 
         const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${mapX(p.lon).toFixed(1)},${mapY(p.lat).toFixed(1)}`).join(' ');
         const sx = mapX(pts[0].lon).toFixed(1);

@@ -357,8 +357,14 @@
     }
 
     function redistributePhotos() {
-      if (photos.length === 0) return;
       clearPhotoMarkers();
+
+      // Always fit map to route when one exists (even without photos)
+      if (routeLine) {
+        map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+      }
+
+      if (photos.length === 0) return;
 
       // Photos with real GPS: display at exact position, do NOT snap to route
       photos.forEach(p => {
