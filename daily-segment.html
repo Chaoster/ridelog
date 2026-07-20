@@ -169,9 +169,7 @@
         document.getElementById('journey-name').textContent = journey.title;
       }
 
-      if (isEdit && editIdx >= 0 && journey.segments && journey.segments[editIdx]) {
-
-    if (isEdit && editIdx >= 0 && journey && journey.segments && journey.segments[editIdx]) {
+      if (isEdit && editIdx >= 0 && journey && journey.segments && journey.segments[editIdx]) {
       existingSeg = journey.segments[editIdx];
       document.getElementById('page-title').textContent = '编辑记录';
 
@@ -264,6 +262,7 @@
       }
 
       redistributePhotos();
+      }
     }
 
     loadJourney();

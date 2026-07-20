@@ -16,15 +16,24 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+html, body {
+  height: 100%;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
-  padding-bottom: 80px;
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   max-width: 480px;
   margin: 0 auto;
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+body.page-no-nav {
+  padding-bottom: 20px;
 }
 
 /* Header */
@@ -57,6 +66,18 @@ body {
   color: white;
   font-weight: 600;
   font-size: 14px;
+  overflow: hidden;
+}
+
+.header .avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.header .avatar.with-img {
+  background: transparent;
 }
 
 /* Tabs */
@@ -214,19 +235,20 @@ body {
 .bottom-nav {
   position: fixed;
   bottom: 0;
-  left: 50%;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
   width: 100%;
   max-width: 480px;
-  transform: translateX(-50%);
-  -webkit-transform: translateX(-50%);
   background: var(--surface);
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 60px;
-  padding: 8px 20px 20px;
+  padding: 8px 20px max(20px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
-  z-index: 999999 !important;
+  z-index: 999999;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
 }
 
 .nav-item {
@@ -293,6 +315,13 @@ body {
   border-color: var(--primary);
 }
 
+input[type="date"] {
+  max-width: 100%;
+  min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .form-textarea {
   min-height: 120px;
   resize: vertical;
@@ -303,6 +332,7 @@ body {
   border: 2px dashed var(--border);
   border-radius: var(--radius-sm);
   padding: 32px 20px;
+  margin: 0 20px;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
@@ -529,6 +559,20 @@ body {
   border-radius: var(--radius-sm);
   overflow: hidden;
   box-shadow: var(--shadow);
+}
+
+.elevation-chart-wrap {
+  margin: 0 20px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  box-shadow: var(--shadow);
+}
+
+.elevation-chart-wrap canvas {
+  width: 100%;
+  height: 180px;
+  display: block;
 }
 
 /* Journey Content */
@@ -809,4 +853,110 @@ body {
   font-size: 14px;
   color: var(--text-secondary);
   margin-bottom: 20px;
+}
+
+/* Login Modal */
+.login-modal {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+}
+
+.login-modal > * {
+  margin-bottom: 20px;
+}
+
+.login-modal > *:last-child {
+  margin-bottom: 0;
+}
+
+.login-modal .form-input {
+  padding: 14px 16px;
+}
+
+.login-code-row {
+  display: flex;
+  gap: 12px;
+}
+
+.login-code-row .form-input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.login-code-row .btn {
+  flex: 0 0 auto;
+  padding: 14px 16px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* 错误信息无内容时不占高度，有内容时上方10px、下方20px */
+.login-modal .login-error {
+  color: #e74c3c;
+  font-size: 13px;
+  margin: 0;
+  min-height: 0;
+}
+
+.login-modal .login-error:not(:empty) {
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+/* 按钮行 */
+.login-modal .action-row {
+  margin: 0;
+  gap: 20px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Button loading spinner */
+.btn-loading {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+}
+
+.btn-loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  border-top-color: rgba(0, 0, 0, 0.7);
+  border-radius: 50%;
+  animation: btn-spin 0.8s linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Toast notification */
+.toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 1000000;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.toast.show {
+  opacity: 1;
 }
