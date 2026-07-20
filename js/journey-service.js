@@ -138,10 +138,18 @@
 
     if (segmentIds.length) {
       for (const segId of segmentIds) {
-        const segPhotos = await fetchRowsForSegment('photos', segId, 'created_at');
-        photoRows.push(...segPhotos);
-        const segGpx = await fetchRowsForSegment('gpx_points', segId, 'point_index');
-        gpxRows.push(...segGpx);
+        try {
+          const segPhotos = await fetchRowsForSegment('photos', segId, 'created_at');
+          photoRows.push(...segPhotos);
+        } catch (e) {
+          console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
+        }
+        try {
+          const segGpx = await fetchRowsForSegment('gpx_points', segId, 'point_index');
+          gpxRows.push(...segGpx);
+        } catch (e) {
+          console.error('[fetchJourneyWithData] gpx_points fetch error for segment', segId, e);
+        }
       }
     }
 
@@ -230,7 +238,14 @@
         throw error;
       }
 
-      const results = await Promise.all((journeyRows || []).map(j => fetchJourneyWithData(j.id)));
+      const results = await Promise.all((journeyRows || []).map(async j => {
+        try {
+          return await fetchJourneyWithData(j.id);
+        } catch (err) {
+          console.error('[journeyService] fetch journey detail error, id:', j.id, err);
+          return null;
+        }
+      }));
       return results.filter(Boolean);
     }
 
