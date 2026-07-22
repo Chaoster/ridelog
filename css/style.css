@@ -670,7 +670,7 @@ input[type="date"] {
   justify-content: space-around;
   padding: 16px 20px;
   background: var(--surface);
-  margin: 0 20px;
+  margin: 20px 20px 0;
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
 }
