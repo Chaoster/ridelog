@@ -39,6 +39,18 @@
     </div>
   </div>
 
+  <!-- Delete GPX Modal -->
+  <div class="modal-overlay" id="delete-gpx-modal">
+    <div class="modal">
+      <div class="modal-title">删除路线</div>
+      <div class="modal-desc">是否删除路线？</div>
+      <div class="action-row" style="margin:0;">
+        <button class="btn btn-secondary" onclick="document.getElementById('delete-gpx-modal').classList.remove('active')">取消</button>
+        <button class="btn btn-accent" onclick="confirmRemoveGPX()">确认</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Day Badge -->
   <div style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;padding:16px 20px;text-align:center;">
     <div style="font-size:12px;opacity:0.9;">JOURNEY DAY</div>
@@ -73,18 +85,27 @@
   <!-- GPX Upload -->
   <div class="section">
     <div class="section-title">GPX 路线文件</div>
-    <div class="upload-area" onclick="document.getElementById('gpx-input').click()">
-      <div class="upload-icon">&#128220;</div>
-      <div class="upload-text">点击上传今日 GPX 路线文件</div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">支持 .gpx 格式</div>
+    <div id="gpx-upload-wrap">
+      <div class="photo-grid" style="margin-bottom:4px;">
+        <div class="photo-add" onclick="document.getElementById('gpx-input').click()">+</div>
+      </div>
+      <input type="file" id="gpx-input" accept=".gpx" style="display:none;" onchange="handleGPX(event)">
+      <div style="font-size:12px;color:var(--text-secondary);padding:0 20px;margin-top:4px;">
+        点击上传今日 GPX 路线文件，支持 .gpx 格式
+      </div>
     </div>
-    <input type="file" id="gpx-input" accept=".gpx" style="display:none;" onchange="handleGPX(event)">
     <div id="gpx-preview"></div>
   </div>
 
   <!-- Route Preview Map -->
   <div class="section" id="route-section" style="display:none;">
-    <div class="section-title">路线预览</div>
+    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <span>路线预览</span>
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+        <span id="gpx-file-name" style="font-size:13px;color:var(--text-secondary);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;"></span>
+        <button onclick="showRemoveGPXModal()" style="padding:4px 10px;border-radius:6px;border:1px solid #e74c3c;background:#fff;color:#e74c3c;font-size:12px;cursor:pointer;flex-shrink:0;">删除路线</button>
+      </div>
+    </div>
     <div class="map-container" id="map-wrap" style="position:relative;">
       <div id="map" style="height:280px;"></div>
       <button id="map-fs-btn" style="position:absolute;top:8px;right:8px;z-index:500;padding:6px 12px;border-radius:6px;border:none;background:rgba(0,0,0,0.6);color:white;font-size:13px;cursor:pointer;" onclick="toggleMapFullscreen()">全屏</button>
@@ -272,16 +293,11 @@
         }
 
         drawRouteOnMap();
-        document.getElementById('gpx-preview').innerHTML = `
-          <div class="gpx-file">
-            <span class="gpx-icon">&#128220;</span>
-            <div>
-              <div class="gpx-name">${existingSeg.distance > 0 ? Math.round(existingSeg.distance) : '-'} km 路线</div>
-              <div style="font-size:12px;color:var(--text-secondary);">${gpxPoints.length} 个轨迹点</div>
-            </div>
-            <span class="gpx-status">&#10003; 已上传</span>
-          </div>
-        `;
+
+        // Show route preview and hide upload component (edit mode shows no file name)
+        document.getElementById('gpx-upload-wrap').style.display = 'none';
+        document.getElementById('gpx-file-name').textContent = '';
+        document.getElementById('gpx-preview').innerHTML = '';
 
         // Show stats and stats values from existing data
         document.getElementById('route-section').style.display = 'block';
@@ -847,6 +863,11 @@
 
         drawRouteOnMap();
 
+        // Hide upload component and show route preview with file name
+        document.getElementById('gpx-upload-wrap').style.display = 'none';
+        document.getElementById('gpx-file-name').textContent = file.name;
+        document.getElementById('gpx-preview').innerHTML = '';
+
         document.getElementById('route-section').style.display = 'block';
         document.getElementById('elevation-section').style.display = 'block';
         document.getElementById('stats-section').style.display = 'block';
@@ -859,17 +880,6 @@
         drawElevationChart(rawPoints, dists);
         document.getElementById('elevation-chart').style.display = 'block';
         document.getElementById('elevation-missing').style.display = 'none';
-
-        document.getElementById('gpx-preview').innerHTML = `
-          <div class="gpx-file">
-            <span class="gpx-icon">&#128220;</span>
-            <div>
-              <div class="gpx-name">${file.name}</div>
-              <div style="font-size:12px;color:var(--text-secondary);">${rawPoints.length} 个轨迹点</div>
-            </div>
-            <span class="gpx-status">&#10003; 已解析</span>
-          </div>
-        `;
 
         document.getElementById('stat-dist').textContent = Math.round(totalDist);
         document.getElementById('stat-elev').textContent = formatElev(totalElev, totalElevLoss);
@@ -885,6 +895,51 @@
         }
       };
       reader.readAsText(file);
+    }
+
+    function removeGPX() {
+      if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+      }
+      if (startMarker) {
+        map.removeLayer(startMarker);
+        startMarker = null;
+      }
+      if (endMarker) {
+        map.removeLayer(endMarker);
+        endMarker = null;
+      }
+      hideHoverMarker();
+
+      gpxPoints = [];
+      rawGpxPoints = [];
+      gpxDists = [];
+      routeSvg = '';
+      currentDistance = 0;
+      currentElevGain = 0;
+      currentElevLoss = 0;
+      currentDurationHours = 0;
+
+      document.getElementById('gpx-input').value = '';
+      document.getElementById('gpx-preview').innerHTML = '';
+      document.getElementById('gpx-file-name').textContent = '';
+      document.getElementById('gpx-upload-wrap').style.display = 'block';
+
+      document.getElementById('route-section').style.display = 'none';
+      document.getElementById('elevation-section').style.display = 'none';
+      document.getElementById('stats-section').style.display = 'none';
+
+      redistributePhotos();
+    }
+
+    function showRemoveGPXModal() {
+      document.getElementById('delete-gpx-modal').classList.add('active');
+    }
+
+    function confirmRemoveGPX() {
+      document.getElementById('delete-gpx-modal').classList.remove('active');
+      removeGPX();
     }
 
     async function saveSegment() {

@@ -388,6 +388,10 @@ input[type="date"] {
   background: var(--bg);
 }
 
+.photo-add:active {
+  transform: scale(0.98);
+}
+
 /* Timeline */
 .timeline {
   position: relative;
