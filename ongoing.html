@@ -128,6 +128,20 @@
 
     let journey = null;
 
+    async function initPage() {
+      if (!(await window.journeyService.isLoggedIn())) {
+        document.getElementById('loading-overlay').style.display = 'none';
+        document.body.innerHTML = `
+          <div style="text-align:center;padding:60px 20px;color:var(--text-secondary);">
+            <div style="font-size:16px;margin-bottom:16px;">请先登录后查看进行中的旅程</div>
+            <button class="btn btn-primary" onclick="window.requireAuth(() => location.reload())">登录 / 注册</button>
+          </div>
+        `;
+        return;
+      }
+      loadJourney();
+    }
+
     async function loadJourney() {
       if (!journeyId) {
         alert('缺少旅程 ID');
@@ -241,9 +255,13 @@
       }).join('');
     }
 
-    loadJourney();
+    initPage();
 
     function addSegment() {
+      if (!window.currentUser) {
+        window.requireAuth && window.requireAuth(() => addSegment());
+        return;
+      }
       const nextDay = (journey?.segments || []).length + 1;
       location.href = `daily-segment.html?day=${nextDay}&journeyId=${journey.id}&journey=${encodeURIComponent(journey.title)}`;
     }
@@ -253,6 +271,10 @@
     }
 
     async function confirmDeleteJourney() {
+      if (!window.currentUser) {
+        window.requireAuth && window.requireAuth(() => confirmDeleteJourney());
+        return;
+      }
       document.getElementById('delete-journey-modal').classList.remove('active');
 
       try {
@@ -265,6 +287,10 @@
     }
 
     function endJourney() {
+      if (!window.currentUser) {
+        window.requireAuth && window.requireAuth(() => endJourney());
+        return;
+      }
       const segs = journey?.segments || [];
       if (segs.length === 0) {
         alert('至少添加一天的记录才能结束旅程');
@@ -285,6 +311,10 @@
     }
 
     async function saveJourneyTitle() {
+      if (!window.currentUser) {
+        window.requireAuth && window.requireAuth(() => saveJourneyTitle());
+        return;
+      }
       const input = document.getElementById('edit-title-input');
       const newTitle = input.value.trim();
       if (!newTitle) {
@@ -318,6 +348,10 @@
     });
 
     async function confirmEndJourney() {
+      if (!window.currentUser) {
+        window.requireAuth && window.requireAuth(() => confirmEndJourney());
+        return;
+      }
       document.getElementById('end-modal').classList.remove('active');
       document.getElementById('loading-overlay').style.display = 'flex';
 

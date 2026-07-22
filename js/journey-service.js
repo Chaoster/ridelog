@@ -128,10 +128,13 @@
       id: journeyRow.id,
       title: journeyRow.title,
       status: journeyRow.status,
+      userId: journeyRow.user_id,
       createdAt: formatDate(journeyRow.created_at),
       completedAt: formatDate(journeyRow.completed_at),
       isPublic: journeyRow.is_public,
       segments,
+      totalDistance: Number(journeyRow.total_distance) || 0,
+      totalElevation: Number(journeyRow.total_elevation) || 0,
       coverUrl: journeyRow.cover_url || coverUrlFromSegments(segments),
       coverSvg: routeSvgFromSegments(segments)
     };
@@ -165,6 +168,8 @@
       let query = supabaseClient.from('journeys').select('*').eq('id', journeyId);
       if (loggedIn) {
         query = query.eq('user_id', userId);
+      } else {
+        query = query.eq('is_public', true).eq('status', 'completed');
       }
       const { data: journeyRow, error: jErr } = await query.maybeSingle();
       if (jErr) throw jErr;
@@ -174,7 +179,10 @@
         .from('segments')
         .select('*')
         .eq('journey_id', journeyId);
-      if (sErr) throw sErr;
+      if (sErr) {
+        if (loggedIn) throw sErr;
+        console.error('[fetchJourneyWithData] segments fetch error (anonymous):', sErr);
+      }
 
       const segmentIds = (segmentRows || []).map(s => s.id);
       let photoRows = [];
@@ -327,16 +335,38 @@
   // ----- Supabase public API -----
 
   async function getJourneys({ status, publicOnly } = {}) {
-    if (await isLoggedIn()) {
-      let query = supabaseClient.from('journeys').select('*');
+    if (publicOnly) {
+      // 产品策略：首页对所有人只展示 completed 且 is_public 的 journey
+      let query = supabaseClient.from('journeys').select('*')
+        .eq('is_public', true)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false });
 
-      if (publicOnly) {
-        query = query.eq('is_public', true).eq('status', 'completed');
-      } else {
-        query = query.eq('user_id', await getUserId());
-        if (status) query = query.eq('status', status);
+      const { data: journeyRows, error } = await query;
+      if (error) {
+        console.error('[journeyService] getJourneys public error:', error);
+        throw error;
       }
 
+      return (journeyRows || []).map(j => ({
+        id: j.id,
+        title: j.title,
+        status: j.status,
+        createdAt: formatDate(j.created_at),
+        completedAt: formatDate(j.completed_at),
+        isPublic: j.is_public,
+        segments: [],
+        totalDistance: Number(j.total_distance) || 0,
+        totalElevation: Number(j.total_elevation) || 0,
+        coverUrl: j.cover_url || null,
+        coverSvg: ''
+      }));
+    }
+
+    if (await isLoggedIn()) {
+      let query = supabaseClient.from('journeys').select('*')
+        .eq('user_id', await getUserId());
+      if (status) query = query.eq('status', status);
       query = query.order('created_at', { ascending: false });
 
       const { data: journeyRows, error } = await query;
@@ -356,7 +386,6 @@
       return results.filter(Boolean);
     }
 
-    if (publicOnly) return [];
     return getLocalJourneys(status);
   }
 
@@ -377,6 +406,12 @@
   async function getJourney(id) {
     if (await isLoggedIn()) {
       return fetchJourneyWithData(id, { includePhotos: true, includeGpx: true });
+    }
+    try {
+      const publicJourney = await fetchJourneyWithData(id, { includePhotos: true, includeGpx: true });
+      if (publicJourney) return publicJourney;
+    } catch (err) {
+      console.error('[journeyService] getJourney public fetch error:', err);
     }
     return getLocalJourney(id);
   }
@@ -425,7 +460,7 @@
           user_id: userId,
           title,
           status: 'ongoing',
-          is_public: false,
+          is_public: true,
           total_distance: 0,
           total_elevation: 0
         })
@@ -457,7 +492,7 @@
         .update({
           title: journey.title,
           status: journey.status,
-          is_public: journey.isPublic || false,
+          is_public: journey.isPublic !== false,
           completed_at: journey.completedAt || null,
           updated_at: new Date().toISOString()
         })
@@ -712,7 +747,7 @@
           user_id: userId,
           title: j.title,
           status: j.completedAt ? 'completed' : 'ongoing',
-          is_public: false,
+          is_public: true,
           completed_at: j.completedAt || null,
           total_distance: 0,
           total_elevation: 0

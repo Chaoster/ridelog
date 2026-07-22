@@ -41,7 +41,9 @@
 
   <!-- Header -->
   <div class="header">
-    <img src="images/logo.png" class="logo" alt="DONKE">
+    <a href="index.html" class="logo-link" aria-label="回到首页">
+      <img src="images/logo.png" class="logo" alt="DONKE">
+    </a>
     <a href="profile.html" class="avatar" id="header-avatar" aria-label="我的" onclick="event.preventDefault(); requireAuth(() => location.href='profile.html')">
       <svg id="header-avatar-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       <img id="header-avatar-img" class="hidden" alt="头像">
@@ -82,13 +84,28 @@
     <div id="completed-list"></div>
   </div>
 
+  <!-- New Journey Modal -->
+  <div class="modal-overlay" id="new-journey-modal">
+    <div class="modal new-journey-modal">
+      <div class="modal-title">开启新的旅程</div>
+      <div class="form-group" style="margin: 0 0 20px; text-align: left;">
+        <label class="form-label">旅程标题</label>
+        <input type="text" class="form-input" id="new-journey-title" placeholder="给你的旅程起个名，例如：环青海湖骑行">
+      </div>
+      <div class="action-row" style="margin: 0;">
+        <button class="btn btn-secondary" onclick="closeNewJourneyModal()">取消</button>
+        <button class="btn btn-primary" onclick="createJourneyFromModal()">创建</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Bottom Nav -->
   <nav class="bottom-nav">
     <a href="index.html" class="nav-item">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       首页
     </a>
-    <a href="new-journey.html" class="nav-cta" onclick="event.preventDefault(); requireAuth(() => location.href='new-journey.html')">+新旅程</a>
+    <a href="#" class="nav-cta" onclick="event.preventDefault(); openNewJourneyModal()">+新旅程</a>
     <a href="my-records.html" class="nav-item active" onclick="event.preventDefault(); requireAuth(() => location.href='my-records.html')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       记录
@@ -145,12 +162,13 @@
             console.error('[my-records] migrate error:', err);
           });
         } else {
-          ongoing = storage.get('ongoingJourneys') || [];
+          // 未登录时不展示进行中的旅程
+          ongoing = [];
           completed = storage.get('completedJourneys') || [];
         }
       } catch (err) {
         console.error('[my-records] load journeys error:', err);
-        ongoing = storage.get('ongoingJourneys') || [];
+        ongoing = [];
         completed = storage.get('completedJourneys') || [];
       }
 
@@ -341,6 +359,47 @@
           }
         });
       });
+    });
+  </script>
+
+  <script>
+    async function openNewJourneyModal() {
+      if (!window.journeyService) return;
+      if (!(await window.journeyService.isLoggedIn())) {
+        window.requireAuth && window.requireAuth(async () => {
+          document.getElementById('new-journey-modal').classList.add('active');
+          document.getElementById('new-journey-title').focus();
+        });
+        return;
+      }
+      document.getElementById('new-journey-modal').classList.add('active');
+      document.getElementById('new-journey-title').focus();
+    }
+
+    function closeNewJourneyModal() {
+      document.getElementById('new-journey-modal').classList.remove('active');
+      document.getElementById('new-journey-title').value = '';
+    }
+
+    async function createJourneyFromModal() {
+      const titleInput = document.getElementById('new-journey-title');
+      const title = titleInput.value.trim();
+      if (!title) {
+        alert('请填写旅程标题');
+        return;
+      }
+      try {
+        await window.journeyService.createJourney(title);
+        closeNewJourneyModal();
+        location.href = 'my-records.html';
+      } catch (err) {
+        alert('创建失败：' + err.message);
+      }
+    }
+
+    document.getElementById('new-journey-title').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') createJourneyFromModal();
+      if (e.key === 'Escape') closeNewJourneyModal();
     });
   </script>
 </body>

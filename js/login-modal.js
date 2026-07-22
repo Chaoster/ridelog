@@ -151,9 +151,18 @@
         hideLoginModal();
         sessionStorage.setItem('loginSuccess', '1');
 
-        setTimeout(() => {
-          location.href = 'index.html';
-        }, 300);
+        if (window.authCallback) {
+          const cb = window.authCallback;
+          window.authCallback = null;
+          const result = cb();
+          if (result && typeof result.then === 'function') {
+            await result;
+          }
+        } else {
+          setTimeout(() => {
+            location.href = 'index.html';
+          }, 300);
+        }
       } catch (err) {
         showError(err.message || '验证失败，请重试');
       } finally {

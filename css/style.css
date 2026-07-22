@@ -49,6 +49,11 @@ body.page-no-nav {
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
 
+.header .logo-link {
+  display: inline-flex;
+  line-height: 0;
+}
+
 .header .logo {
   width: 150px;
   height: auto;

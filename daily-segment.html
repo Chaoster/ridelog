@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase-config.js"></script>
+  <script src="js/login-modal.js"></script>
 </head>
 <body class="page-no-nav">
   <!-- Loading Overlay -->
@@ -190,6 +191,20 @@
     let journey = null;
     let existingSeg = null;
 
+    async function initPage() {
+      if (!(await window.journeyService.isLoggedIn())) {
+        document.getElementById('loading-overlay').style.display = 'none';
+        document.body.innerHTML = `
+          <div style="text-align:center;padding:60px 20px;color:var(--text-secondary);">
+            <div style="font-size:16px;margin-bottom:16px;">请先登录后再编辑每日记录</div>
+            <button class="btn btn-primary" onclick="window.requireAuth(() => location.reload())">登录 / 注册</button>
+          </div>
+        `;
+        return;
+      }
+      loadJourney();
+    }
+
     async function loadJourney() {
       if (!journeyId) {
         alert('缺少 journeyId');
@@ -338,7 +353,7 @@
       document.getElementById('loading-overlay').style.display = 'none';
     }
 
-    loadJourney();
+    initPage();
 
     function compressImage(dataUrl, options = {}) {
       const {

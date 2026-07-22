@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase-config.js"></script>
+  <script src="js/login-modal.js"></script>
   <style>
     .route-path {
       stroke-dasharray: 10;
@@ -138,6 +139,10 @@
 
     // Expose handlers used in inline onclick attributes
     window.editTitle = async function () {
+      if (!(await window.journeyService.isLoggedIn())) {
+        window.requireAuth && window.requireAuth(() => editTitle());
+        return;
+      }
       const newTitle = prompt('修改旅程标题:', journey.title);
       if (newTitle && newTitle.trim()) {
         journey.title = newTitle.trim();
@@ -157,6 +162,10 @@
     };
 
     window.confirmDelete = async function () {
+      if (!(await window.journeyService.isLoggedIn())) {
+        window.requireAuth && window.requireAuth(() => confirmDelete());
+        return;
+      }
       document.getElementById('delete-modal').classList.remove('active');
       try {
         await window.journeyService.deleteJourney(journeyId);
@@ -302,14 +311,13 @@
       canvas.ontouchcancel = () => hideHoverMarker();
     }
 
-    function collectElevationData() {
+    function collectElevationData(segments) {
       const points = [];
       const dists = [];
       let totalDist = 0;
 
-      if (isUserJourney) {
-        const segs = journey.segments || [];
-        segs.forEach(seg => {
+      if (segments && segments.length > 0) {
+        segments.forEach(seg => {
           if (seg.gpxPoints && seg.gpxPoints.length > 0) {
             let dayStartDist = totalDist;
             seg.gpxPoints.forEach((p, i) => {
@@ -363,6 +371,9 @@
       // Load journey data
       document.getElementById('loading-overlay').style.display = 'flex';
 
+      const loggedIn = await window.journeyService.isLoggedIn();
+      const currentUser = window.currentUser;
+
       try {
         journey = await window.journeyService.getJourney(journeyId);
       } catch (err) {
@@ -372,7 +383,9 @@
       document.getElementById('loading-overlay').style.display = 'none';
 
       if (journey) {
-        isUserJourney = true;
+        isUserJourney = loggedIn && currentUser && (
+          journey.userId === currentUser.id || !journey.userId
+        );
       } else {
         journey = SAMPLE_JOURNEYS.find(j => j.id == journeyId);
         if (!journey) {
@@ -412,9 +425,12 @@
     if (isUserJourney) {
       document.getElementById('detail-author').textContent = '我';
       document.getElementById('detail-date').textContent = journey.completedAt || journey.createdAt;
-    } else {
+    } else if (journey.author) {
       document.getElementById('detail-author').textContent = journey.author;
       document.getElementById('detail-date').textContent = journey.date;
+    } else {
+      document.getElementById('detail-author').textContent = '骑行者';
+      document.getElementById('detail-date').textContent = journey.completedAt || journey.createdAt;
     }
 
     // Init cover map with real tiles
@@ -442,7 +458,7 @@
       if (!coverMap) return;
       let hasRoute = false;
 
-      if (isUserJourney) {
+      if (segs.length > 0) {
         segs.forEach((seg, idx) => {
           if (seg.gpxPoints && seg.gpxPoints.length > 0) {
             const dayCoords = seg.gpxPoints.filter(p => Array.isArray(p) && p.length >= 2);
@@ -461,7 +477,7 @@
             }
           }
         });
-      } else {
+      } else if (journey.routeCoords && journey.routeCoords.length > 0) {
         (journey.routeCoords || []).forEach((dayCoords, idx) => {
           coverPoints = coverPoints.concat(dayCoords);
           if (dayCoords.length >= 2) {
@@ -537,7 +553,7 @@
     } else {
       initCoverMap();
       const hasCoverRoute = drawCoverRoute();
-      if (!hasCoverRoute && !isUserJourney) {
+      if (!hasCoverRoute && journey.cover) {
         document.getElementById('cover-map').innerHTML = '';
         const img = document.createElement('img');
         img.src = journey.cover;
@@ -578,7 +594,7 @@
       });
     }
 
-    if (isUserJourney) {
+    if (segs.length > 0) {
       // 1st pass: collect all photo positions
       const allPhotoPositions = [];
       segs.forEach(seg => {
@@ -660,7 +676,7 @@
           allPhotoMarkers.push(marker);
         });
       });
-    } else {
+    } else if (journey.routeCoords && journey.routeCoords.length > 0) {
       // Sample journey
       journey.routeCoords.forEach((dayCoords, idx) => {
         const color = colors[idx % colors.length];
@@ -733,7 +749,12 @@
       map.setView([36.95, 100.90], 10);
     }
 
-    window.downloadCombinedGPX = function downloadCombinedGPX() {
+    window.downloadCombinedGPX = async function downloadCombinedGPX() {
+      if (!(await window.journeyService.isLoggedIn())) {
+        window.requireAuth && window.requireAuth(() => downloadCombinedGPX());
+        return;
+      }
+
       const segs = journey.segments || [];
       const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
       if (!hasGpx) {
@@ -772,8 +793,8 @@
       URL.revokeObjectURL(url);
     };
 
-    // Show download button if GPX exists
-    if (segs.some(s => s.gpxPoints && s.gpxPoints.length > 0)) {
+    // Show download button if GPX exists, or always for anonymous users so we can prompt login
+    if (!loggedIn || segs.some(s => s.gpxPoints && s.gpxPoints.length > 0)) {
       document.getElementById('gpx-download-wrap').style.display = 'block';
     }
 
@@ -803,7 +824,7 @@
     const storyEl = document.getElementById('journey-story');
     const INITIAL_DAYS_SHOWN = 3;
 
-    function renderUserDaySection(seg, idx, total) {
+    function renderUserDaySection(seg, idx, total, canEdit) {
       const images = [];
 
       // Route snapshot first
@@ -822,6 +843,10 @@
         });
       }
 
+      const editLink = canEdit
+        ? `<span style="font-size:12px;color:var(--text-secondary);cursor:pointer;" onclick="event.stopPropagation();location.href='daily-segment.html?edit=1&amp;idx=${idx}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">&#9998; 编辑</span>`
+        : '';
+
       return `
         <div class="day-section">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -837,7 +862,7 @@
                 ${seg.duration ? `<span style="font-size:12px;color:var(--text-secondary);">${seg.duration}</span>` : ''}
               </div>
             </div>
-            <span style="font-size:12px;color:var(--text-secondary);cursor:pointer;" onclick="event.stopPropagation();location.href='daily-segment.html?edit=1&amp;idx=${idx}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">&#9998; 编辑</span>
+            ${editLink}
           </div>
           <div style="font-size:14px;color:var(--text);line-height:1.6;margin-bottom:12px;">${seg.note}</div>
           ${images.length > 0 ? `
@@ -880,10 +905,10 @@
       btn.style.cssText = 'width:100%;margin-top:8px;';
       btn.onclick = () => {
         btn.remove();
-        if (isUserJourney) {
-          const restHtml = segs.slice(INITIAL_DAYS_SHOWN).map((seg, i) => renderUserDaySection(seg, INITIAL_DAYS_SHOWN + i, totalDays)).join('');
+        if (segs.length > 0) {
+          const restHtml = segs.slice(INITIAL_DAYS_SHOWN).map((seg, i) => renderUserDaySection(seg, INITIAL_DAYS_SHOWN + i, totalDays, isUserJourney)).join('');
           storyEl.insertAdjacentHTML('beforeend', restHtml);
-        } else {
+        } else if (journey.segments && journey.segments.length > 0) {
           const sampleTotal = journey.segments.length;
           const restHtml = journey.segments.slice(INITIAL_DAYS_SHOWN).map((seg, i) => renderSampleDaySection(seg, INITIAL_DAYS_SHOWN + i, sampleTotal, journey.photos)).join('');
           storyEl.insertAdjacentHTML('beforeend', restHtml);
@@ -892,8 +917,8 @@
       return btn;
     }
 
-    if (isUserJourney) {
-      storyEl.innerHTML = segs.slice(0, INITIAL_DAYS_SHOWN).map((seg, idx) => renderUserDaySection(seg, idx, totalDays)).join('');
+    if (segs.length > 0) {
+      storyEl.innerHTML = segs.slice(0, INITIAL_DAYS_SHOWN).map((seg, idx) => renderUserDaySection(seg, idx, totalDays, isUserJourney)).join('');
 
       if (segs.length > INITIAL_DAYS_SHOWN) {
         storyEl.appendChild(renderLoadMoreButton(segs.length - INITIAL_DAYS_SHOWN));
@@ -905,7 +930,7 @@
         总里程 ${totalDist > 0 ? totalDist.toFixed(1) : '-'} km，
         总爬升 ${totalElev > 0 ? Math.round(totalElev) : '-'} m。
       `;
-    } else {
+    } else if (journey.segments && journey.segments.length > 0) {
       const sampleTotal = journey.segments.length;
       storyEl.innerHTML = journey.segments.slice(0, INITIAL_DAYS_SHOWN).map((seg, idx) => renderSampleDaySection(seg, idx, sampleTotal, journey.photos)).join('');
 
@@ -919,10 +944,19 @@
         总里程 ${journey.distance} km，
         最终抵达 <strong>${journey.end}</strong>。
       `;
+    } else {
+      storyEl.innerHTML = `
+        <div style="text-align:center;padding:40px 20px;color:var(--text-secondary);font-size:14px;">
+          暂无详细日志
+        </div>
+      `;
+      document.getElementById('route-summary').innerHTML = `
+        本次旅程 <strong>${journey.title}</strong>。
+      `;
     }
 
     // Draw elevation profile
-    const { points, dists } = collectElevationData();
+    const { points, dists } = collectElevationData(segs);
     if (points.some(p => p.ele != null)) {
       document.getElementById('elevation-section').style.display = 'block';
       drawElevationChart(points, dists);
