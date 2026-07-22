@@ -30,6 +30,15 @@
   </style>
 </head>
 <body>
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" style="position:fixed;inset:0;background:rgba(255,255,255,0.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;">
+    <div style="width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:loading-spin 1s linear infinite;"></div>
+    <div style="color:var(--text-secondary);font-size:14px;">加载中...</div>
+  </div>
+  <style>
+    @keyframes loading-spin { to { transform: rotate(360deg); } }
+  </style>
+
   <!-- Header -->
   <div class="header">
     <img src="images/logo.png" class="logo" alt="DONKE">
@@ -94,14 +103,15 @@
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js"></script>
-  <script src="js/journey-service.js"></script>
+  <script src="js/app.js?v=13"></script>
+  <script src="js/journey-service.js?v=13"></script>
   <script>
     const colors = ['#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
 
     const coverMapsToInit = [];
 
     function getCoverUrl(j) {
+      if (j.coverUrl) return j.coverUrl;
       const urls = [];
       (j.segments || []).forEach(s => { if (s.photoUrls) urls.push(...s.photoUrls); });
       if (urls.length === 0) return null;
@@ -109,7 +119,26 @@
       return urls[hash % urls.length];
     }
 
+    function getCoverSvg(j) {
+      if (j.coverSvg) return j.coverSvg;
+      const segs = j.segments || [];
+      for (const s of segs) {
+        if (s.routeSvg) return s.routeSvg;
+      }
+      return null;
+    }
+
+    function renderSvgCover(svg, width = '80px', height = '80px') {
+      return `
+        <div style="width:${width};height:${height};border-radius:10px;overflow:hidden;background:#edf3ea;flex-shrink:0;">
+          ${svg.replace(/width="100%"/g, `width="${width}"`).replace(/height="100%"/g, `height="${height}"`)}
+        </div>
+      `;
+    }
+
     async function renderRecords() {
+      document.getElementById('loading-overlay').style.display = 'flex';
+
       let ongoing = [];
       let completed = [];
       try {
@@ -131,6 +160,8 @@
         ongoing = storage.get('ongoingJourneys') || [];
         completed = storage.get('completedJourneys') || [];
       }
+
+      document.getElementById('loading-overlay').style.display = 'none';
 
       // Update counts
       document.getElementById('ongoing-count').textContent = ongoing.length;
@@ -199,12 +230,11 @@
           // Determine cover: real map for user journeys with GPX, photo or placeholder otherwise
           let coverHtml = '';
           const coverUrl = getCoverUrl(j);
-          const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
+          const coverSvg = getCoverSvg(j);
           if (isUserJourney && coverUrl) {
             coverHtml = `<img src="${coverUrl}" style="width:80px;height:80px;border-radius:10px;object-fit:cover;flex-shrink:0;">`;
-          } else if (isUserJourney && hasGpx) {
-            coverHtml = `<div id="cover-map-${j.id}" class="cover-map-thumb"></div>`;
-            coverMapsToInit.push({ id: j.id, segs: segs });
+          } else if (isUserJourney && coverSvg) {
+            coverHtml = renderSvgCover(coverSvg);
           } else if (isUserJourney) {
             coverHtml = `<img src="https://images.unsplash.com/photo-1541625602330-2277a4c46182?w=400" style="width:80px;height:80px;border-radius:10px;object-fit:cover;flex-shrink:0;">`;
           } else {

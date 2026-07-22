@@ -11,6 +11,15 @@
   <script src="js/login-modal.js"></script>
 </head>
 <body class="page-no-nav" style="padding-bottom:20px;">
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" style="position:fixed;inset:0;background:rgba(255,255,255,0.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;">
+    <div style="width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:loading-spin 1s linear infinite;"></div>
+    <div style="color:var(--text-secondary);font-size:14px;">加载中...</div>
+  </div>
+  <style>
+    @keyframes loading-spin { to { transform: rotate(360deg); } }
+  </style>
+
   <!-- Page Header -->
   <div class="page-header">
     <button class="back-btn" onclick="goBack()">&#8249;</button>
@@ -109,11 +118,15 @@
         return;
       }
 
+      document.getElementById('loading-overlay').style.display = 'flex';
+
       try {
         journey = await window.journeyService.getJourneySummary(journeyId);
       } catch (err) {
         console.error('[ongoing] load journey error:', err);
       }
+
+      document.getElementById('loading-overlay').style.display = 'none';
 
       if (!journey) {
         alert('旅程不存在');
@@ -178,7 +191,7 @@
           }
 
           return `
-            <div class="card" style="margin:12px 20px;cursor:pointer;" onclick="location.href='daily-segment.html?edit=1&amp;idx=${i}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">
+            <div class="card" style="margin:12px 20px;">
               <div class="card-content">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
                   <div class="segment-day" style="width:40px;height:40px;">
@@ -193,7 +206,7 @@
                       ${seg.duration ? `<span style="font-size:12px;color:var(--text-secondary);">${seg.duration}</span>` : ''}
                     </div>
                   </div>
-                  <span style="font-size:12px;color:var(--text-secondary);">&#9998; 编辑</span>
+                  <span style="font-size:12px;color:var(--text-secondary);cursor:pointer;" onclick="event.stopPropagation();location.href='daily-segment.html?edit=1&amp;idx=${i}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">&#9998; 编辑</span>
                 </div>
                 <div style="font-size:14px;color:var(--text);line-height:1.6;margin-bottom:12px;">${seg.note}</div>
                 ${images.length > 0 ? `
@@ -245,13 +258,15 @@
 
     async function confirmEndJourney() {
       document.getElementById('end-modal').classList.remove('active');
+      document.getElementById('loading-overlay').style.display = 'flex';
 
       try {
         await window.journeyService.endJourney(journeyId);
-        alert('旅程已结束！正在生成旅行日志...');
         location.href = `journey-detail.html?id=${journeyId}&completed=1&from=records`;
       } catch (err) {
+        console.error('[ongoing] end journey error:', err);
         alert('结束旅程失败：' + err.message);
+        document.getElementById('loading-overlay').style.display = 'none';
       }
     }
   </script>

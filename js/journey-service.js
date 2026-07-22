@@ -39,8 +39,42 @@
     return null;
   }
 
+  function routeSvgFromSegments(segments) {
+    for (const seg of segments || []) {
+      if (seg.routeSvg) return seg.routeSvg;
+    }
+    return null;
+  }
+
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = deg => deg * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function simplifyGpxPoints(points, thresholdMeters = 30) {
+    if (!points || points.length <= 2) return points;
+    const result = [points[0]];
+    let last = points[0];
+    for (let i = 1; i < points.length - 1; i++) {
+      const p = points[i];
+      const dist = haversineMeters(last[0], last[1], p[0], p[1]);
+      if (dist >= thresholdMeters) {
+        result.push(p);
+        last = p;
+      }
+    }
+    result.push(points[points.length - 1]);
+    return result;
+  }
+
   // Build the frontend journey object from DB rows
-  function buildJourney(journeyRow, segmentRows, photoRows, gpxRows) {
+  function buildJourney(journeyRow, segmentRows, photoRows, gpxRows, editIdx = -1) {
     const photosBySegment = {};
     photoRows.forEach(p => {
       photosBySegment[p.segment_id] = photosBySegment[p.segment_id] || [];
@@ -65,8 +99,11 @@
           .map(pt => [Number(pt.lat), Number(pt.lng), pt.elevation != null ? Number(pt.elevation) : null])
           .filter(p => !isNaN(p[0]) && !isNaN(p[1]));
 
+        const shouldSimplify = editIdx < 0;
+        const simplifiedGpx = shouldSimplify ? simplifyGpxPoints(gpxPoints, 30) : gpxPoints;
+
         if (gpxPoints.length > 0) {
-          console.log('[buildJourney] segment', seg.id, 'day', seg.day_index, 'raw rows:', rawGpxRows.length, 'valid points:', gpxPoints.length, 'first 3 raw:', rawGpxRows.slice(0, 3), 'last raw:', rawGpxRows[rawGpxRows.length - 1]);
+          console.log('[buildJourney] segment', seg.id, 'day', seg.day_index, 'raw rows:', rawGpxRows.length, 'valid points:', gpxPoints.length, 'simplified:', simplifiedGpx.length, 'first 3 raw:', rawGpxRows.slice(0, 3), 'last raw:', rawGpxRows[rawGpxRows.length - 1]);
         }
 
         return {
@@ -76,8 +113,8 @@
           photoCount: photos.length,
           photos,
           photoUrls: photos.map(p => p.url),
-          gpx: gpxPoints.length > 0,
-          gpxPoints,
+          gpx: simplifiedGpx.length > 0,
+          gpxPoints: simplifiedGpx,
           routeSvg: seg.route_svg || '',
           distance: Number(seg.distance) || 0,
           elevation: Number(seg.elevation) || 0,
@@ -85,10 +122,6 @@
           duration: seg.duration || '-'
         };
       });
-
-    if (segments.length > 0) {
-      console.log('[buildJourney] segments built, first routeSvg length:', (segments[0].routeSvg || '').length);
-    }
 
     return {
       id: journeyRow.id,
@@ -98,7 +131,8 @@
       completedAt: formatDate(journeyRow.completed_at),
       isPublic: journeyRow.is_public,
       segments,
-      coverUrl: journeyRow.cover_url || coverUrlFromSegments(segments)
+      coverUrl: journeyRow.cover_url || coverUrlFromSegments(segments),
+      coverSvg: routeSvgFromSegments(segments)
     };
   }
 
@@ -123,53 +157,59 @@
   }
 
   async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false, editIdx = -1 } = {}) {
-    const { data: journeyRow, error: jErr } = await supabaseClient
-      .from('journeys')
-      .select('*')
-      .eq('id', journeyId)
-      .maybeSingle();
-    if (jErr) throw jErr;
-    if (!journeyRow) return null;
+    try {
+      const loggedIn = await isLoggedIn();
+      const userId = loggedIn ? await getUserId() : null;
 
-    const { data: segmentRows, error: sErr } = await supabaseClient
-      .from('segments')
-      .select('*')
-      .eq('journey_id', journeyId);
-    if (sErr) throw sErr;
+      let query = supabaseClient.from('journeys').select('*').eq('id', journeyId);
+      if (loggedIn) {
+        query = query.eq('user_id', userId);
+      }
+      const { data: journeyRow, error: jErr } = await query.maybeSingle();
+      if (jErr) throw jErr;
+      if (!journeyRow) return null;
 
-    const segmentIds = (segmentRows || []).map(s => s.id);
-    let photoRows = [];
-    let gpxRows = [];
+      const { data: segmentRows, error: sErr } = await supabaseClient
+        .from('segments')
+        .select('*')
+        .eq('journey_id', journeyId);
+      if (sErr) throw sErr;
 
-    if (segmentIds.length) {
-      // For edit mode, only load full gpx/photos for the target segment
-      const targetIds = editIdx >= 0 && segmentRows[editIdx]
-        ? [segmentRows[editIdx].id]
-        : segmentIds;
+      const segmentIds = (segmentRows || []).map(s => s.id);
+      let photoRows = [];
+      let gpxRows = [];
 
-      if (includePhotos) {
-        for (const segId of targetIds) {
-          try {
-            const segPhotos = await fetchRowsForSegment('photos', segId, 'created_at');
-            photoRows.push(...segPhotos);
-          } catch (e) {
-            console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
-          }
+      if (segmentIds.length) {
+        // For edit mode, only load full gpx/photos for the target segment
+        const targetIds = editIdx >= 0 && segmentRows[editIdx]
+          ? [segmentRows[editIdx].id]
+          : segmentIds;
+
+        if (includePhotos) {
+          const photoResults = await Promise.all(targetIds.map(segId =>
+            fetchRowsForSegment('photos', segId, 'created_at').catch(e => {
+              console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
+              return [];
+            })
+          ));
+          photoRows = photoResults.flat();
+        }
+        if (includeGpx) {
+          const gpxResults = await Promise.all(targetIds.map(segId =>
+            fetchRowsForSegment('gpx_points', segId, 'point_index').catch(e => {
+              console.error('[fetchJourneyWithData] gpx_points fetch error for segment', segId, e);
+              return [];
+            })
+          ));
+          gpxRows = gpxResults.flat();
         }
       }
-      if (includeGpx) {
-        for (const segId of targetIds) {
-          try {
-            const segGpx = await fetchRowsForSegment('gpx_points', segId, 'point_index');
-            gpxRows.push(...segGpx);
-          } catch (e) {
-            console.error('[fetchJourneyWithData] gpx_points fetch error for segment', segId, e);
-          }
-        }
-      }
+
+      return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows, editIdx);
+    } catch (err) {
+      console.error('[fetchJourneyWithData] fatal error:', err);
+      throw err;
     }
-
-    return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows);
   }
 
   async function updateJourneyTotals(journeyId) {
@@ -290,6 +330,41 @@
     return getLocalJourney(id);
   }
 
+  async function getJourneyMinimal(id) {
+    if (await isLoggedIn()) {
+      const { data, error } = await supabaseClient
+        .from('journeys')
+        .select('id, title, status, created_at, completed_at, is_public, total_distance, total_elevation, cover_url')
+        .eq('id', id)
+        .eq('user_id', await getUserId())
+        .maybeSingle();
+      if (error) {
+        console.error('[journeyService] getJourneyMinimal error:', error);
+        throw error;
+      }
+      if (!data) return null;
+      return {
+        id: data.id,
+        title: data.title,
+        status: data.status,
+        createdAt: formatDate(data.created_at),
+        completedAt: formatDate(data.completed_at),
+        isPublic: data.is_public,
+        segments: [],
+        coverUrl: data.cover_url
+      };
+    }
+
+    const local = getLocalJourney(id);
+    if (local) {
+      return {
+        ...local,
+        segments: []
+      };
+    }
+    return null;
+  }
+
   async function createJourney(title) {
     if (await isLoggedIn()) {
       const userId = await getUserId();
@@ -404,7 +479,12 @@
     if (!journey) throw new Error('旅程不存在');
     journey.status = 'completed';
     journey.completedAt = new Date().toISOString().slice(0, 10);
-    return updateJourney(journey);
+    const updated = await updateJourney(journey);
+    if (!updated) {
+      console.error('[journeyService] endJourney: update succeeded but fetch returned null, id:', id);
+      throw new Error('结束旅程后无法读取旅程数据，请检查登录状态或刷新页面');
+    }
+    return updated;
   }
 
   async function saveSegment(journeyId, segment, editIdx) {
@@ -659,6 +739,7 @@
     getJourneys,
     getJourney,
     getJourneySummary,
+    getJourneyMinimal,
     getJourneyForEdit,
     createJourney,
     updateJourney,

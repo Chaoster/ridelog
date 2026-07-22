@@ -727,6 +727,13 @@ input[type="date"] {
   color: white;
 }
 
+.btn-load-more {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
 /* Progress Steps */
 .steps {
   display: flex;

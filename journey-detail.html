@@ -3,10 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>旅程总结 - RideLog</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" type="image/png" href="images/favicon.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
   <style>
     .route-path {
       stroke-dasharray: 10;
@@ -18,6 +23,15 @@
   </style>
 </head>
 <body>
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" style="position:fixed;inset:0;background:rgba(255,255,255,0.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;">
+    <div style="width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:loading-spin 1s linear infinite;"></div>
+    <div style="color:var(--text-secondary);font-size:14px;">加载中...</div>
+  </div>
+  <style>
+    @keyframes loading-spin { to { transform: rotate(360deg); } }
+  </style>
+
   <!-- Page Header -->
   <div class="page-header">
     <button class="back-btn" onclick="goBack()">&#8249;</button>
@@ -99,8 +113,8 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js"></script>
-  <script src="js/journey-service.js"></script>
+  <script src="js/app.js?v=13"></script>
+  <script src="js/journey-service.js?v=13"></script>
   <script>
     const urlParams = new URLSearchParams(location.search);
     const journeyId = urlParams.get('id') || '1';
@@ -150,11 +164,15 @@
 
     (async function () {
       // Load journey data
+      document.getElementById('loading-overlay').style.display = 'flex';
+
       try {
         journey = await window.journeyService.getJourney(journeyId);
       } catch (err) {
         console.error('[journey-detail] load journey error:', err);
       }
+
+      document.getElementById('loading-overlay').style.display = 'none';
 
       if (journey) {
         isUserJourney = true;
@@ -240,7 +258,8 @@
                 weight: 4,
                 opacity: 0.9,
                 lineCap: 'round',
-                lineJoin: 'round'
+                lineJoin: 'round',
+                className: dayCoords.length < 500 ? 'route-path' : ''
               }).addTo(coverMap);
             }
           }
@@ -256,7 +275,8 @@
               weight: 4,
               opacity: 0.9,
               lineCap: 'round',
-              lineJoin: 'round'
+              lineJoin: 'round',
+              className: dayCoords.length < 500 ? 'route-path' : ''
             }).addTo(coverMap);
           }
         });
@@ -281,6 +301,7 @@
 
     // Deterministic cover selection
     function getCoverUrl(j) {
+      if (j.coverUrl) return j.coverUrl;
       const urls = [];
       (j.segments || []).forEach(s => { if (s.photoUrls) urls.push(...s.photoUrls); });
       if (urls.length === 0) return null;
@@ -288,14 +309,33 @@
       return urls[hash % urls.length];
     }
 
+    function getCoverSvg(j) {
+      if (j.coverSvg) return j.coverSvg;
+      const segs = j.segments || [];
+      for (const s of segs) {
+        if (s.routeSvg) return s.routeSvg;
+      }
+      return null;
+    }
+
     const coverUrl = getCoverUrl(journey);
+    const coverSvg = getCoverSvg(journey);
 
     if (coverUrl) {
       document.getElementById('cover-map').innerHTML = '';
       const img = document.createElement('img');
       img.src = coverUrl;
+      img.loading = 'lazy';
       img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
       document.getElementById('cover-map').appendChild(img);
+    } else if (coverSvg) {
+      document.getElementById('cover-map').innerHTML = coverSvg;
+      const svgEl = document.getElementById('cover-map').querySelector('svg');
+      if (svgEl) {
+        svgEl.style.width = '100%';
+        svgEl.style.height = '100%';
+        svgEl.style.display = 'block';
+      }
     } else {
       initCoverMap();
       const hasCoverRoute = drawCoverRoute();
@@ -303,6 +343,7 @@
         document.getElementById('cover-map').innerHTML = '';
         const img = document.createElement('img');
         img.src = journey.cover;
+        img.loading = 'lazy';
         img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
         document.getElementById('cover-map').appendChild(img);
       } else if (!hasCoverRoute) {
@@ -360,7 +401,7 @@
             color: color,
             weight: 4,
             opacity: 0.85,
-            className: 'route-path'
+            className: dayCoords.length < 500 ? 'route-path' : ''
           }).addTo(map);
 
           // Day marker — pick a route point not too close to any photo
@@ -406,7 +447,7 @@
           if (photo.lat === 0 && photo.lng === 0) return;
           const icon = L.divIcon({
             className: 'photo-pin',
-            html: `<img src="${photo.url}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">`,
+            html: `<img src="${photo.url}" loading="lazy" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">`,
             iconSize: [40, 40],
             iconAnchor: [20, 40]
           });
@@ -431,7 +472,7 @@
           color: color,
           weight: 4,
           opacity: 0.85,
-          className: 'route-path'
+          className: dayCoords.length < 500 ? 'route-path' : ''
         }).addTo(map);
 
         if (dayCoords.length > 0) {
@@ -450,14 +491,14 @@
       journey.photos.forEach(photo => {
         const icon = L.divIcon({
           className: 'photo-pin',
-          html: `<img src="${photo.url}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">`,
+          html: `<img src="${photo.url}" loading="lazy" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">`,
           iconSize: [40, 40],
           iconAnchor: [20, 40]
         });
         const marker = L.marker([photo.lat, photo.lng], { icon }).addTo(map);
         marker.bindPopup(`
           <div style="text-align:center;">
-            <img src="${photo.url}" style="width:150px;height:100px;object-fit:cover;border-radius:8px;cursor:pointer;" data-fullscreen="${photo.url}">
+            <img src="${photo.url}" loading="lazy" style="width:150px;height:100px;object-fit:cover;border-radius:8px;cursor:pointer;" data-fullscreen="${photo.url}">
             <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">点击查看大图</div>
           </div>
         `);
@@ -540,8 +581,10 @@
 
     // Render journey story
     const storyEl = document.getElementById('journey-story');
-    if (isUserJourney) {
-      storyEl.innerHTML = segs.map((seg, idx) => `
+    const INITIAL_DAYS_SHOWN = 3;
+
+    function renderUserDaySection(seg, idx, total) {
+      return `
         <div class="day-section">
           <div class="day-header" style="justify-content:space-between;">
             <div style="display:flex;align-items:center;gap:10px;">
@@ -553,7 +596,7 @@
           <div class="day-note">${seg.note}</div>
           ${seg.photoUrls && seg.photoUrls.length > 0 ? `
             <div class="day-photos">
-              ${seg.photoUrls.map(url => `<img src="${url}" data-fullscreen="${url}">`).join('')}
+              ${seg.photoUrls.map(url => `<img src="${url}" data-fullscreen="${url}" loading="lazy">`).join('')}
             </div>
           ` : ''}
           <div style="margin-top:10px;font-size:13px;color:var(--text-secondary);">
@@ -562,8 +605,58 @@
             ${seg.duration ? `· 用时: ${seg.duration}` : ''}
           </div>
         </div>
-        ${idx < segs.length - 1 ? '<div class="divider" style="margin:24px 0;"></div>' : ''}
-      `).join('');
+        ${idx < total - 1 ? '<div class="divider" style="margin:24px 0;"></div>' : ''}
+      `;
+    }
+
+    function renderSampleDaySection(seg, idx, total, photos) {
+      return `
+        <div class="day-section">
+          <div class="day-header">
+            <span class="day-badge">Day ${seg.day}</span>
+            <span class="day-date">${seg.date}</span>
+          </div>
+          <div class="day-note">${seg.note}</div>
+          ${photos[idx] ? `
+            <div class="day-photos">
+              <img src="${photos[idx].url}" data-fullscreen="${photos[idx].url}" loading="lazy">
+              ${photos[idx + 1] ? `<img src="${photos[idx + 1].url}" data-fullscreen="${photos[idx + 1].url}" loading="lazy">` : ''}
+            </div>
+          ` : ''}
+          <div style="margin-top:10px;font-size:13px;color:var(--text-secondary);">
+            今日里程: ${seg.distance} km
+            ${seg.gpxFile ? `· GPX: ${seg.gpxFile}` : ''}
+          </div>
+        </div>
+        ${idx < total - 1 ? '<div class="divider" style="margin:24px 0;"></div>' : ''}
+      `;
+    }
+
+    function renderLoadMoreButton(remainingCount) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-load-more';
+      btn.textContent = `查看更多 (${remainingCount} 天)`;
+      btn.style.cssText = 'width:100%;margin-top:8px;';
+      btn.onclick = () => {
+        btn.remove();
+        if (isUserJourney) {
+          const restHtml = segs.slice(INITIAL_DAYS_SHOWN).map((seg, i) => renderUserDaySection(seg, INITIAL_DAYS_SHOWN + i, totalDays)).join('');
+          storyEl.insertAdjacentHTML('beforeend', restHtml);
+        } else {
+          const sampleTotal = journey.segments.length;
+          const restHtml = journey.segments.slice(INITIAL_DAYS_SHOWN).map((seg, i) => renderSampleDaySection(seg, INITIAL_DAYS_SHOWN + i, sampleTotal, journey.photos)).join('');
+          storyEl.insertAdjacentHTML('beforeend', restHtml);
+        }
+      };
+      return btn;
+    }
+
+    if (isUserJourney) {
+      storyEl.innerHTML = segs.slice(0, INITIAL_DAYS_SHOWN).map((seg, idx) => renderUserDaySection(seg, idx, totalDays)).join('');
+
+      if (segs.length > INITIAL_DAYS_SHOWN) {
+        storyEl.appendChild(renderLoadMoreButton(segs.length - INITIAL_DAYS_SHOWN));
+      }
 
       document.getElementById('route-summary').innerHTML = `
         本次旅程 <strong>${journey.title}</strong>，
@@ -572,26 +665,12 @@
         总爬升 ${totalElev > 0 ? Math.round(totalElev) : '-'} m。
       `;
     } else {
-      storyEl.innerHTML = journey.segments.map((seg, idx) => `
-        <div class="day-section">
-          <div class="day-header">
-            <span class="day-badge">Day ${seg.day}</span>
-            <span class="day-date">${seg.date}</span>
-          </div>
-          <div class="day-note">${seg.note}</div>
-          ${journey.photos[idx] ? `
-            <div class="day-photos">
-              <img src="${journey.photos[idx].url}" data-fullscreen="${journey.photos[idx].url}">
-              ${journey.photos[idx + 1] ? `<img src="${journey.photos[idx + 1].url}" data-fullscreen="${journey.photos[idx + 1].url}">` : ''}
-            </div>
-          ` : ''}
-          <div style="margin-top:10px;font-size:13px;color:var(--text-secondary);">
-            今日里程: ${seg.distance} km
-            ${seg.gpxFile ? `· GPX: ${seg.gpxFile}` : ''}
-          </div>
-        </div>
-        ${idx < journey.segments.length - 1 ? '<div class="divider" style="margin:24px 0;"></div>' : ''}
-      `).join('');
+      const sampleTotal = journey.segments.length;
+      storyEl.innerHTML = journey.segments.slice(0, INITIAL_DAYS_SHOWN).map((seg, idx) => renderSampleDaySection(seg, idx, sampleTotal, journey.photos)).join('');
+
+      if (journey.segments.length > INITIAL_DAYS_SHOWN) {
+        storyEl.appendChild(renderLoadMoreButton(journey.segments.length - INITIAL_DAYS_SHOWN));
+      }
 
       document.getElementById('route-summary').innerHTML = `
         从 <strong>${journey.start}</strong> 出发，
