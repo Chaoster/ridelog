@@ -16,7 +16,7 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-html, body {
+html {
   height: 100%;
 }
 
@@ -33,7 +33,7 @@ body {
 }
 
 body.page-no-nav {
-  padding-bottom: 20px;
+  padding-bottom: 40px;
 }
 
 /* Header */

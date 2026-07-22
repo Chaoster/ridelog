@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>旅程进行中 - RideLog</title>
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css?v=8">
   <link rel="icon" type="image/png" href="images/favicon.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/login-modal.js"></script>
 </head>
-<body class="page-no-nav" style="padding-bottom:20px;">
+<body class="page-no-nav">
   <!-- Loading Overlay -->
   <div id="loading-overlay" style="position:fixed;inset:0;background:rgba(255,255,255,0.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;">
     <div style="width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:loading-spin 1s linear infinite;"></div>
@@ -76,7 +76,7 @@
   </div>
 
   <!-- Add Segment Button -->
-  <div style="margin:16px 20px;">
+  <div style="margin:16px 20px 0;">
     <button class="btn btn-primary" style="width:100%;" onclick="addSegment()">
       + 添加 Day <span id="next-day">1</span> 记录
     </button>

@@ -53,7 +53,7 @@
 
   <!-- Cover Map -->
   <div id="cover-section" style="position:relative;">
-    <div id="cover-map" style="width:100%;height:220px;"></div>
+    <div id="cover-map" style="width:100%;height:220px;overflow:hidden;"></div>
     <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));padding:40px 20px 16px;">
       <div id="detail-title" style="color:white;font-size:22px;font-weight:700;"></div>
       <div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:4px;display:flex;gap:16px;align-items:center;">
@@ -98,6 +98,14 @@
     </div>
   </div>
 
+  <!-- Elevation Profile -->
+  <div class="section" id="elevation-section" style="display:none;">
+    <div class="section-title">海拔剖面</div>
+    <div class="elevation-chart-wrap" id="elevation-chart-wrap">
+      <canvas id="elevation-chart"></canvas>
+    </div>
+  </div>
+
   <!-- Journey Story -->
   <div class="section">
     <div class="section-title">旅行日志</div>
@@ -113,7 +121,7 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js?v=13"></script>
+  <script src="js/app.js?v=14"></script>
   <script src="js/journey-service.js?v=13"></script>
   <script>
     const urlParams = new URLSearchParams(location.search);
@@ -161,6 +169,195 @@
 
     let journey = null;
     let isUserJourney = false;
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function drawElevationChart(points, dists) {
+      const canvas = document.getElementById('elevation-chart');
+      const wrap = canvas.parentElement;
+      const dpr = window.devicePixelRatio || 1;
+      const width = wrap.clientWidth - 24;
+      const height = 180;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const pad = { top: 20, right: 10, bottom: 28, left: 44 };
+      const chartW = width - pad.left - pad.right;
+      const chartH = height - pad.top - pad.bottom;
+
+      const eles = points.map(p => p.ele).filter(e => e != null);
+      if (eles.length === 0) {
+        document.getElementById('elevation-section').style.display = 'none';
+        return;
+      }
+
+      const minEle = Math.min(...eles);
+      const maxEle = Math.max(...eles);
+      const eleRange = Math.max(maxEle - minEle, 1);
+      const maxDist = dists[dists.length - 1] || 0;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Grid lines
+      ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.top + (chartH / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + chartW, y);
+        ctx.stroke();
+      }
+
+      // Elevation area
+      const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + chartH);
+      gradient.addColorStop(0, 'rgba(255,123,61,0.35)');
+      gradient.addColorStop(1, 'rgba(255,123,61,0.05)');
+
+      ctx.beginPath();
+      ctx.moveTo(pad.left, pad.top + chartH);
+      points.forEach((p, i) => {
+        if (p.ele == null) return;
+        const x = pad.left + (maxDist > 0 ? (dists[i] / maxDist) * chartW : 0);
+        const y = pad.top + chartH - ((p.ele - minEle) / eleRange) * chartH;
+        ctx.lineTo(x, y);
+      });
+      ctx.lineTo(pad.left + chartW, pad.top + chartH);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // Elevation line
+      ctx.beginPath();
+      ctx.strokeStyle = '#FF7B3D';
+      ctx.lineWidth = 2;
+      let started = false;
+      points.forEach((p, i) => {
+        if (p.ele == null) return;
+        const x = pad.left + (maxDist > 0 ? (dists[i] / maxDist) * chartW : 0);
+        const y = pad.top + chartH - ((p.ele - minEle) / eleRange) * chartH;
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+
+      // Y-axis labels (elevation)
+      ctx.fillStyle = 'var(--text-secondary)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (let i = 0; i <= 4; i++) {
+        const val = minEle + (eleRange / 4) * (4 - i);
+        const y = pad.top + (chartH / 4) * i;
+        ctx.fillText(Math.round(val) + 'm', pad.left - 8, y);
+      }
+
+      // X-axis labels (distance)
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (let i = 0; i <= 4; i++) {
+        const val = (maxDist / 4) * i;
+        const x = pad.left + (chartW / 4) * i;
+        ctx.fillText(Math.round(val) + 'km', x, pad.top + chartH + 8);
+      }
+
+      // Interaction: hover/touch on chart to highlight map position
+      function handleChartMove(clientX) {
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        if (x < pad.left || x > width - pad.right) return;
+        const ratio = (x - pad.left) / chartW;
+        const idx = Math.min(points.length - 1, Math.max(0, Math.round(ratio * (points.length - 1))));
+        showHoverMarker(points[idx]);
+      }
+
+      canvas.onmousemove = (e) => handleChartMove(e.clientX);
+      canvas.ontouchstart = (e) => {
+        e.preventDefault();
+        if (e.touches.length > 0) handleChartMove(e.touches[0].clientX);
+      };
+      canvas.ontouchmove = (e) => {
+        e.preventDefault();
+        if (e.touches.length > 0) handleChartMove(e.touches[0].clientX);
+      };
+      canvas.onmouseleave = () => hideHoverMarker();
+      canvas.ontouchend = () => hideHoverMarker();
+      canvas.ontouchcancel = () => hideHoverMarker();
+    }
+
+    function collectElevationData() {
+      const points = [];
+      const dists = [];
+      let totalDist = 0;
+
+      if (isUserJourney) {
+        const segs = journey.segments || [];
+        segs.forEach(seg => {
+          if (seg.gpxPoints && seg.gpxPoints.length > 0) {
+            let dayStartDist = totalDist;
+            seg.gpxPoints.forEach((p, i) => {
+              const lat = p[0];
+              const lon = p[1];
+              const ele = p[2] != null ? p[2] : null;
+              points.push({ lat, lon, ele });
+
+              if (i === 0) {
+                dists.push(dayStartDist);
+              } else {
+                const prev = seg.gpxPoints[i - 1];
+                totalDist += haversine(prev[0], prev[1], lat, lon);
+                dists.push(totalDist);
+              }
+            });
+          }
+        });
+      }
+
+      return { points, dists };
+    }
+
+    let hoverMarker = null;
+    let map = null;
+
+    function showHoverMarker(point) {
+      if (!point) return;
+      if (hoverMarker) {
+        hoverMarker.setLatLng([point.lat, point.lon]);
+      } else {
+        hoverMarker = L.circleMarker([point.lat, point.lon], {
+          radius: 6,
+          fillColor: '#FF7B3D',
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.9
+        }).addTo(map);
+      }
+    }
+
+    function hideHoverMarker() {
+      if (hoverMarker) {
+        map.removeLayer(hoverMarker);
+        hoverMarker = null;
+      }
+    }
 
     (async function () {
       // Load journey data
@@ -335,6 +532,7 @@
         svgEl.style.width = '100%';
         svgEl.style.height = '100%';
         svgEl.style.display = 'block';
+        svgEl.setAttribute('preserveAspectRatio', 'xMidYMid slice');
       }
     } else {
       initCoverMap();
@@ -356,7 +554,7 @@
     document.getElementById('stat-elev').textContent = totalElev > 0 ? Math.round(totalElev) : '-';
 
     // Init map
-    const map = L.map('map');
+    map = L.map('map');
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
@@ -678,6 +876,13 @@
         总里程 ${journey.distance} km，
         最终抵达 <strong>${journey.end}</strong>。
       `;
+    }
+
+    // Draw elevation profile
+    const { points, dists } = collectElevationData();
+    if (points.some(p => p.ele != null)) {
+      document.getElementById('elevation-section').style.display = 'block';
+      drawElevationChart(points, dists);
     }
   })();
   </script>

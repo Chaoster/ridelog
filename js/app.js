@@ -97,10 +97,6 @@ function generateRouteSvg(gpxPoints, size = 100) {
     const mapY = lat => size - yPad - (lat - yOffset) / scale;
 
     const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${mapX(p.lon).toFixed(1)},${mapY(p.lat).toFixed(1)}`).join(' ');
-    const sx = mapX(pts[0].lon).toFixed(1);
-    const sy = mapY(pts[0].lat).toFixed(1);
-    const ex = mapX(pts[pts.length - 1].lon).toFixed(1);
-    const ey = mapY(pts[pts.length - 1].lat).toFixed(1);
 
     let bgElements = '';
     const gridStep = size / 6;
@@ -136,8 +132,6 @@ function generateRouteSvg(gpxPoints, size = 100) {
         <rect width="${size}" height="${size}" fill="#edf3ea"/>
         ${bgElements}
         <path d="${pathD}" fill="none" stroke="#FF7B3D" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="${sx}" cy="${sy}" r="4.5" fill="#2ecc71" stroke="white" stroke-width="2"/>
-        <circle cx="${ex}" cy="${ey}" r="4.5" fill="#e74c3c" stroke="white" stroke-width="2"/>
       </svg>
     `;
   } catch (e) {
