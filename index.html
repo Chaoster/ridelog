@@ -122,7 +122,7 @@
         if (coverUrl) {
           coverHtml = `<img class="card-image" src="${coverUrl}" alt="${j.title}">`;
         } else if (coverSvg) {
-          coverHtml = renderSvgCover(coverSvg, `mini-map-${j.id}`, '100%', '180px').replace('border-radius:10px', 'border-radius:0');
+          coverHtml = renderSvgCover(coverSvg, `mini-map-${j.id}`, '100%', '240px').replace('border-radius:10px', 'border-radius:0');
         } else {
           coverHtml = `<img class="card-image" src="https://images.unsplash.com/photo-1541625602330-2277a4c46182?w=600" alt="${j.title}">`;
         }

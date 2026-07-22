@@ -45,8 +45,25 @@
   <!-- Journey Title -->
   <div style="background:var(--surface);padding:20px;text-align:center;border-bottom:1px solid var(--border);">
     <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">ONGOING JOURNEY</div>
-    <div style="font-size:22px;font-weight:700;color:var(--text);" id="journey-title">--</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+      <div style="font-size:22px;font-weight:700;color:var(--text);" id="journey-title">--</div>
+      <button style="padding:4px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:16px;" onclick="showEditTitleModal()" aria-label="编辑标题">&#9998;</button>
+    </div>
     <div style="font-size:13px;color:var(--text-secondary);margin-top:6px;" id="journey-meta">--</div>
+  </div>
+
+  <!-- Modal: Edit Journey Title -->
+  <div class="modal-overlay" id="edit-title-modal">
+    <div class="modal" style="text-align:left;">
+      <div class="modal-title" style="text-align:center;">编辑旅程标题</div>
+      <div class="form-group" style="margin:16px 0;">
+        <input type="text" class="form-input" id="edit-title-input" placeholder="输入旅程标题" maxlength="100">
+      </div>
+      <div class="action-row" style="margin:0;">
+        <button class="btn btn-secondary" onclick="closeEditTitleModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveJourneyTitle()">保存</button>
+      </div>
+    </div>
   </div>
 
   <!-- Stats -->
@@ -255,6 +272,50 @@
       }
       document.getElementById('end-modal').classList.add('active');
     }
+
+    function showEditTitleModal() {
+      const input = document.getElementById('edit-title-input');
+      input.value = journey?.title || '';
+      document.getElementById('edit-title-modal').classList.add('active');
+      setTimeout(() => input.focus(), 50);
+    }
+
+    function closeEditTitleModal() {
+      document.getElementById('edit-title-modal').classList.remove('active');
+    }
+
+    async function saveJourneyTitle() {
+      const input = document.getElementById('edit-title-input');
+      const newTitle = input.value.trim();
+      if (!newTitle) {
+        alert('标题不能为空');
+        return;
+      }
+      if (newTitle === journey.title) {
+        closeEditTitleModal();
+        return;
+      }
+
+      closeEditTitleModal();
+      document.getElementById('loading-overlay').style.display = 'flex';
+
+      try {
+        journey.title = newTitle;
+        await window.journeyService.updateJourney(journey);
+        document.getElementById('journey-title').textContent = newTitle;
+      } catch (err) {
+        console.error('[ongoing] update title error:', err);
+        alert('保存标题失败：' + err.message);
+        journey.title = document.getElementById('journey-title').textContent;
+      } finally {
+        document.getElementById('loading-overlay').style.display = 'none';
+      }
+    }
+
+    document.getElementById('edit-title-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') saveJourneyTitle();
+      if (e.key === 'Escape') closeEditTitleModal();
+    });
 
     async function confirmEndJourney() {
       document.getElementById('end-modal').classList.remove('active');

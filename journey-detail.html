@@ -703,6 +703,28 @@
       });
     }
 
+    // Add start/end markers on the route
+    if (allPoints.length > 0) {
+      const startPoint = allPoints[0];
+      const endPoint = allPoints[allPoints.length - 1];
+
+      const startIcon = L.divIcon({
+        className: 'route-endpoint',
+        html: `<div style="background:#2ecc71;color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">起</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      const endIcon = L.divIcon({
+        className: 'route-endpoint',
+        html: `<div style="background:#e74c3c;color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">终</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+
+      L.marker([startPoint[0], startPoint[1]], { icon: startIcon, zIndexOffset: 2000 }).addTo(map);
+      L.marker([endPoint[0], endPoint[1]], { icon: endIcon, zIndexOffset: 2000 }).addTo(map);
+    }
+
     // Fit map bounds
     if (allPoints.length > 0) {
       const bounds = L.latLngBounds(allPoints.map(p => L.latLng(p[0], p[1])));
@@ -711,7 +733,7 @@
       map.setView([36.95, 100.90], 10);
     }
 
-    function downloadCombinedGPX() {
+    window.downloadCombinedGPX = function downloadCombinedGPX() {
       const segs = journey.segments || [];
       const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
       if (!hasGpx) {
@@ -748,14 +770,14 @@
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    }
+    };
 
     // Show download button if GPX exists
     if (segs.some(s => s.gpxPoints && s.gpxPoints.length > 0)) {
       document.getElementById('gpx-download-wrap').style.display = 'block';
     }
 
-    function toggleMapFullscreen() {
+    window.toggleMapFullscreen = function toggleMapFullscreen() {
       const wrap = document.getElementById('map-wrap');
       const btn = document.getElementById('map-fs-btn');
       const isFs = wrap.classList.contains('map-fullscreen');
@@ -775,7 +797,7 @@
         btn.style.right = '8px';
       }
       setTimeout(() => map.invalidateSize(), 100);
-    }
+    };
 
     // Render journey story
     const storyEl = document.getElementById('journey-story');
