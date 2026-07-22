@@ -832,7 +832,7 @@ input[type="date"] {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.5);
-  z-index: 1000;
+  z-index: 1000000;
   display: none;
   align-items: center;
   justify-content: center;

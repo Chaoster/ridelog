@@ -166,10 +166,6 @@
     cancelBtn.addEventListener('click', hideLoginModal);
     sendCodeBtn.addEventListener('click', sendCode);
 
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) hideLoginModal();
-    });
-
     codeInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') handleSubmit();
     });
