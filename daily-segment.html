@@ -170,20 +170,34 @@
     let existingSeg = null;
 
     async function loadJourney() {
-      document.getElementById('loading-overlay').style.display = 'flex';
-
       if (!journeyId) {
         alert('缺少 journeyId');
         location.href = 'my-records.html';
         return;
       }
 
+      // 新增模式：表单不依赖 journey 数据，先展示再后台校验
+      if (!isEdit) {
+        document.getElementById('loading-overlay').style.display = 'none';
+        document.getElementById('date-input').value = new Date().toISOString().split('T')[0];
+        window.journeyService.getJourneyMinimal(journeyId)
+          .then(j => {
+            if (j && j.title) {
+              document.getElementById('journey-name').textContent = j.title;
+            }
+            if (!j) {
+              alert('旅程不存在');
+              location.href = 'my-records.html';
+            }
+          })
+          .catch(err => console.error('[daily-segment] load journey error:', err));
+        return;
+      }
+
+      document.getElementById('loading-overlay').style.display = 'flex';
+
       try {
-        if (isEdit && editIdx >= 0) {
-          journey = await window.journeyService.getJourneyForEdit(journeyId, editIdx);
-        } else {
-          journey = await window.journeyService.getJourneyMinimal(journeyId);
-        }
+        journey = await window.journeyService.getJourneyForEdit(journeyId, editIdx);
       } catch (err) {
         console.error('[daily-segment] load journey error:', err);
       }
@@ -310,21 +324,54 @@
 
     loadJourney();
 
-    function compressImage(dataUrl, maxWidth = 1200, quality = 0.7) {
+    function compressImage(dataUrl, options = {}) {
+      const {
+        maxWidth = 1200,
+        maxSizeKB = 500,
+        minQuality = 0.3,
+        qualityStep = 0.05,
+        minWidth = 400
+      } = options;
+
       return new Promise((resolve, reject) => {
         const img = new Image();
-        img.onload = () => {
+        img.onload = async () => {
           let w = img.width, h = img.height;
           if (w > maxWidth) {
             h = Math.round(h * maxWidth / w);
             w = maxWidth;
           }
+
           const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
           const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL('image/jpeg', quality));
+
+          while (w >= minWidth) {
+            canvas.width = w;
+            canvas.height = h;
+            ctx.drawImage(img, 0, 0, w, h);
+
+            for (let q = 0.7; q >= minQuality - 0.001; q -= qualityStep) {
+              const quality = Math.max(q, minQuality);
+              const url = canvas.toDataURL('image/webp', quality);
+              const blob = await dataUrlToBlob(url);
+              if (blob.size <= maxSizeKB * 1024) {
+                console.log(`[compressImage] ${img.width}x${img.height} -> ${w}x${h}, quality ${quality.toFixed(2)}, size ${(blob.size / 1024).toFixed(1)}KB`);
+                resolve(url);
+                return;
+              }
+            }
+
+            w = Math.round(w * 0.8);
+            h = Math.round(h * 0.8);
+          }
+
+          canvas.width = Math.max(w, minWidth);
+          canvas.height = Math.round(Math.max(w, minWidth) * img.height / img.width);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const fallbackUrl = canvas.toDataURL('image/webp', minQuality);
+          const fallbackBlob = await dataUrlToBlob(fallbackUrl);
+          console.log(`[compressImage] fallback ${canvas.width}x${canvas.height}, size ${(fallbackBlob.size / 1024).toFixed(1)}KB`);
+          resolve(fallbackUrl);
         };
         img.onerror = reject;
         img.src = dataUrl;
@@ -340,10 +387,10 @@
       if (userError || !user) throw new Error('未登录，无法上传照片');
       if (!journeyId) throw new Error('缺少 journeyId');
 
-      const fileName = `${user.id}/${journeyId}/${dayNum}/${Date.now()}_${randomSuffix()}.jpg`;
+      const fileName = `${user.id}/${journeyId}/${dayNum}/${Date.now()}_${randomSuffix()}.webp`;
       const { error: uploadError } = await supabaseClient.storage
         .from('segment-photos')
-        .upload(fileName, blob, { contentType: 'image/jpeg' });
+        .upload(fileName, blob, { contentType: 'image/webp' });
 
       if (uploadError) throw uploadError;
 
@@ -501,7 +548,7 @@
           reader.readAsDataURL(file);
         });
 
-        const compressedUrl = await compressImage(dataUrl, 1200, 0.7);
+        const compressedUrl = await compressImage(dataUrl, { maxWidth: 1200, maxSizeKB: 500 });
 
         let url = compressedUrl;
         try {

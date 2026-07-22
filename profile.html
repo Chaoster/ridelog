@@ -248,7 +248,7 @@
 
         avatarCtx.clearRect(0, 0, size, size);
         avatarCtx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
-        pendingAvatarDataUrl = avatarCanvas.toDataURL('image/jpeg', 0.8);
+        pendingAvatarDataUrl = avatarCanvas.toDataURL('image/webp', 0.8);
         avatarModal.classList.add('active');
       };
       img.src = dataUrl;
@@ -280,11 +280,11 @@
 
         const blob = await dataUrlToBlob(pendingAvatarDataUrl);
 
-        const fileName = `${user.id}/${Date.now()}.jpg`;
+        const fileName = `${user.id}/${Date.now()}.webp`;
         const { error: uploadError } = await supabaseClient.storage
           .from('avatars')
           .upload(fileName, blob, {
-            contentType: 'image/jpeg',
+            contentType: 'image/webp',
             upsert: true
           });
 

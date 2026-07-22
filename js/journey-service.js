@@ -74,7 +74,7 @@
   }
 
   // Build the frontend journey object from DB rows
-  function buildJourney(journeyRow, segmentRows, photoRows, gpxRows, editIdx = -1) {
+  function buildJourney(journeyRow, segmentRows, photoRows, gpxRows, editIdx = -1, photoLimit = null) {
     const photosBySegment = {};
     photoRows.forEach(p => {
       photosBySegment[p.segment_id] = photosBySegment[p.segment_id] || [];
@@ -92,6 +92,7 @@
       .map(seg => {
         const photos = (photosBySegment[seg.id] || [])
           .sort((a, b) => a.created_at - b.created_at)
+          .slice(0, photoLimit || Infinity)
           .map(p => ({ url: p.url, lat: Number(p.lat) || 0, lng: Number(p.lng) || 0 }));
 
         const rawGpxRows = (gpxBySegment[seg.id] || []).sort((a, b) => a.point_index - b.point_index);
@@ -156,7 +157,7 @@
     return allRows;
   }
 
-  async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false, editIdx = -1 } = {}) {
+  async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false, editIdx = -1, photoLimit = null } = {}) {
     try {
       const loggedIn = await isLoggedIn();
       const userId = loggedIn ? await getUserId() : null;
@@ -186,13 +187,43 @@
           : segmentIds;
 
         if (includePhotos) {
-          const photoResults = await Promise.all(targetIds.map(segId =>
-            fetchRowsForSegment('photos', segId, 'created_at').catch(e => {
-              console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
-              return [];
-            })
-          ));
-          photoRows = photoResults.flat();
+          if (photoLimit != null && photoLimit > 0 && editIdx < 0 && targetIds.length > 0) {
+            // 列表场景：一次性批量查询所有 segment 的照片，在 buildJourney 中按 segment 限制数量
+            const { data, error } = await supabaseClient
+              .from('photos')
+              .select('*')
+              .in('segment_id', targetIds)
+              .order('created_at', { ascending: true });
+            if (error) {
+              console.error('[fetchJourneyWithData] photos batch fetch error:', error);
+            } else {
+              photoRows = data || [];
+            }
+          } else {
+            const photoResults = await Promise.all(targetIds.map(segId => {
+              if (photoLimit != null && photoLimit > 0) {
+                return supabaseClient
+                  .from('photos')
+                  .select('*')
+                  .eq('segment_id', segId)
+                  .order('created_at', { ascending: true })
+                  .limit(photoLimit)
+                  .then(({ data, error }) => {
+                    if (error) throw error;
+                    return data || [];
+                  })
+                  .catch(e => {
+                    console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
+                    return [];
+                  });
+              }
+              return fetchRowsForSegment('photos', segId, 'created_at').catch(e => {
+                console.error('[fetchJourneyWithData] photos fetch error for segment', segId, e);
+                return [];
+              });
+            }));
+            photoRows = photoResults.flat();
+          }
         }
         if (includeGpx) {
           const gpxResults = await Promise.all(targetIds.map(segId =>
@@ -205,7 +236,7 @@
         }
       }
 
-      return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows, editIdx);
+      return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows, editIdx, photoLimit);
     } catch (err) {
       console.error('[fetchJourneyWithData] fatal error:', err);
       throw err;
@@ -213,10 +244,30 @@
   }
 
   async function updateJourneyTotals(journeyId) {
-    const journey = await fetchJourneyWithData(journeyId, { includePhotos: true, includeGpx: false });
-    const totalDist = journey.segments.reduce((s, seg) => s + (seg.distance || 0), 0);
-    const totalElev = journey.segments.reduce((s, seg) => s + (seg.elevation || 0), 0);
-    const coverUrl = coverUrlFromSegments(journey.segments);
+    const { data: segmentRows, error: sErr } = await supabaseClient
+      .from('segments')
+      .select('id, distance, elevation')
+      .eq('journey_id', journeyId);
+    if (sErr) throw sErr;
+
+    const totalDist = (segmentRows || []).reduce((s, seg) => s + (Number(seg.distance) || 0), 0);
+    const totalElev = (segmentRows || []).reduce((s, seg) => s + (Number(seg.elevation) || 0), 0);
+
+    const segmentIds = (segmentRows || []).map(s => s.id);
+    let coverUrl = null;
+    if (segmentIds.length > 0) {
+      const { data: photoRows, error: pErr } = await supabaseClient
+        .from('photos')
+        .select('url')
+        .in('segment_id', segmentIds)
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (pErr) {
+        console.error('[updateJourneyTotals] cover photo fetch error:', pErr);
+      } else {
+        coverUrl = photoRows?.[0]?.url || null;
+      }
+    }
 
     const { error } = await supabaseClient
       .from('journeys')
@@ -311,7 +362,7 @@
 
   async function getJourneySummary(id) {
     if (await isLoggedIn()) {
-      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: false });
+      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: false, photoLimit: 7 });
     }
     return getLocalJourney(id);
   }
@@ -506,12 +557,13 @@
 
     const { data: journeyRow, error: jErr } = await supabaseClient
       .from('journeys')
-      .select('id')
+      .select('id, status')
       .eq('id', journeyId)
       .eq('user_id', userId)
       .maybeSingle();
     if (jErr) throw jErr;
     if (!journeyRow) throw new Error('旅程不存在或无权限');
+    const journeyStatus = journeyRow.status;
 
     let segmentId;
     let isUpdate = editIdx >= 0;
@@ -636,7 +688,7 @@
     }
 
     await updateJourneyTotals(journeyId);
-    return fetchJourneyWithData(journeyId);
+    return { id: journeyId, status: journeyStatus };
   }
 
   async function migrateLocalStorage() {
