@@ -103,6 +103,16 @@
       while (attempts < 20) {
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (session?.user) break;
+
+        // Try to refresh/recover session on the first few attempts
+        if (attempts < 3) {
+          try {
+            await supabaseClient.auth.refreshSession();
+          } catch (e) {
+            // ignore
+          }
+        }
+
         await new Promise(r => setTimeout(r, 300));
         attempts++;
       }

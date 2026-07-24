@@ -233,7 +233,16 @@
       }
     }
 
-    function startStravaOAuth() {
+    async function startStravaOAuth() {
+      // Ensure session is persisted to storage before leaving for external OAuth.
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (!session?.user) {
+        alert('请先登录后再连接 Strava');
+        return;
+      }
+      // Give localStorage a moment to flush the session tokens.
+      await new Promise(r => setTimeout(r, 300));
+
       const redirectUri = `${location.origin}/strava-callback.html`;
       const scope = 'activity:read_all';
       sessionStorage.setItem('stravaCallbackReturnUrl', location.href);
