@@ -94,8 +94,34 @@
       <div style="font-size:12px;color:var(--text-secondary);padding:0 20px;margin-top:4px;">
         点击上传今日 GPX 路线文件，支持 .gpx 格式
       </div>
+      <div style="display:flex;align-items:center;gap:12px;margin:12px 20px 0;">
+        <div style="flex:1;height:1px;background:var(--border);"></div>
+        <span style="font-size:12px;color:var(--text-secondary);">或</span>
+        <div style="flex:1;height:1px;background:var(--border);"></div>
+      </div>
+      <button class="btn btn-secondary" style="width:calc(100% - 40px);margin:12px 20px 0;display:flex;align-items:center;justify-content:center;gap:8px;" onclick="importFromStrava()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+        </svg>
+        从 Strava 导入
+      </button>
     </div>
     <div id="gpx-preview"></div>
+  </div>
+
+  <!-- Strava Activities Modal -->
+  <div class="modal-overlay" id="strava-modal">
+    <div class="modal" style="max-height:80vh;display:flex;flex-direction:column;">
+      <div class="modal-title" style="flex-shrink:0;">选择 Strava 活动</div>
+      <div id="strava-loading" style="text-align:center;padding:40px 20px;color:var(--text-secondary);font-size:14px;">
+        正在加载 Strava 活动...
+      </div>
+      <div id="strava-error" style="display:none;text-align:center;padding:20px;color:#e74c3c;font-size:14px;"></div>
+      <div id="strava-list" style="overflow-y:auto;flex:1;max-height:50vh;"></div>
+      <div class="action-row" style="margin:0;flex-shrink:0;">
+        <button class="btn btn-secondary" onclick="closeStravaModal()">取消</button>
+      </div>
+    </div>
   </div>
 
   <!-- Route Preview Map -->
@@ -191,6 +217,194 @@
     let journey = null;
     let existingSeg = null;
 
+    // ----- Strava import helpers -----
+
+    async function checkStravaAuth() {
+      try {
+        const { data, error } = await supabaseClient
+          .from('strava_tokens')
+          .select('expires_at')
+          .single();
+        if (error) return false;
+        return !!data;
+      } catch (err) {
+        console.error('[strava] check auth error:', err);
+        return false;
+      }
+    }
+
+    function startStravaOAuth() {
+      const redirectUri = `${location.origin}/strava-callback.html`;
+      const scope = 'activity:read_all';
+      sessionStorage.setItem('stravaCallbackReturnUrl', location.href);
+
+      const authUrl = `https://www.strava.com/oauth/authorize?` +
+        `client_id=${STRAVA_CLIENT_ID}&` +
+        `response_type=code&` +
+        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+        `approval_prompt=auto&` +
+        `scope=${encodeURIComponent(scope)}`;
+
+      location.href = authUrl;
+    }
+
+    async function importFromStrava() {
+      const isConnected = await checkStravaAuth();
+      if (!isConnected) {
+        startStravaOAuth();
+        return;
+      }
+      openStravaModal();
+      loadStravaActivities();
+    }
+
+    function openStravaModal() {
+      document.getElementById('strava-modal').classList.add('active');
+      document.getElementById('strava-loading').style.display = 'block';
+      document.getElementById('strava-error').style.display = 'none';
+      document.getElementById('strava-error').textContent = '';
+      document.getElementById('strava-list').innerHTML = '';
+    }
+
+    function closeStravaModal() {
+      document.getElementById('strava-modal').classList.remove('active');
+    }
+
+    async function loadStravaActivities() {
+      try {
+        const { data, error } = await supabaseClient.functions.invoke('strava-activities', {
+          queryParams: { page: '1', per_page: '30' }
+        });
+
+        if (error) throw error;
+        if (!data || data.error) throw new Error(data?.error || '加载失败');
+
+        renderStravaActivities(data.activities || []);
+      } catch (err) {
+        console.error('[strava] load activities error:', err);
+        document.getElementById('strava-loading').style.display = 'none';
+        document.getElementById('strava-error').style.display = 'block';
+        document.getElementById('strava-error').textContent = '加载 Strava 活动失败：' + (err.message || '未知错误');
+      }
+    }
+
+    function renderStravaActivities(activities) {
+      document.getElementById('strava-loading').style.display = 'none';
+      const listEl = document.getElementById('strava-list');
+
+      if (activities.length === 0) {
+        listEl.innerHTML = `
+          <div style="text-align:center;padding:40px 20px;color:var(--text-secondary);font-size:14px;">
+            没有找到 Strava 活动
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = activities.map(a => `
+        <div class="strava-activity-item" data-id="${a.id}" style="padding:14px 0;border-bottom:1px solid var(--border);cursor:pointer;"
+          onclick="selectStravaActivity(${a.id})">
+          <div style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px;">${escapeHtml(a.name)}</div>
+          <div style="font-size:13px;color:var(--text-secondary);display:flex;gap:12px;flex-wrap:wrap;">
+            <span>${formatStravaDate(a.start_date)}</span>
+            <span>${a.distance} km</span>
+            <span>${a.duration}</span>
+            <span>↑ ${a.elevation_gain}m</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function formatStravaDate(isoString) {
+      if (!isoString) return '';
+      const d = new Date(isoString);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    async function selectStravaActivity(activityId) {
+      closeStravaModal();
+      document.getElementById('loading-overlay').style.display = 'flex';
+
+      try {
+        const { data, error } = await supabaseClient.functions.invoke('strava-activity-streams', {
+          body: { activityId }
+        });
+
+        if (error) throw error;
+        if (!data || data.error) throw new Error(data?.error || '导入失败');
+
+        populateRouteFromStrava(data);
+      } catch (err) {
+        console.error('[strava] import activity error:', err);
+        document.getElementById('loading-overlay').style.display = 'none';
+        alert('导入 Strava 路线失败：' + (err.message || '未知错误'));
+      }
+    }
+
+    function populateRouteFromStrava(data) {
+      hideHoverMarker();
+
+      gpxPoints = data.points || [];
+      rawGpxPoints = gpxPoints.map(p => ({ lat: p[0], lon: p[1], ele: p[2] }));
+      routeSvg = generateRouteSvg(gpxPoints, 100);
+
+      let totalDist = 0;
+      const dists = [0];
+      for (let i = 1; i < rawGpxPoints.length; i++) {
+        totalDist += haversine(rawGpxPoints[i - 1].lat, rawGpxPoints[i - 1].lon, rawGpxPoints[i].lat, rawGpxPoints[i].lon);
+        dists.push(totalDist);
+      }
+      gpxDists = dists;
+
+      currentDistance = data.distance || totalDist;
+      currentElevGain = data.elevation_gain || 0;
+      currentElevLoss = 0;
+
+      // Parse HH:MM:SS duration to hours
+      const durationParts = (data.duration || '').split(':');
+      if (durationParts.length === 3) {
+        const h = parseInt(durationParts[0], 10) || 0;
+        const m = parseInt(durationParts[1], 10) || 0;
+        const s = parseInt(durationParts[2], 10) || 0;
+        currentDurationHours = h + m / 60 + s / 3600;
+      } else {
+        currentDurationHours = 0;
+      }
+
+      drawRouteOnMap();
+
+      document.getElementById('gpx-upload-wrap').style.display = 'none';
+      document.getElementById('gpx-file-name').textContent = 'Strava 导入';
+      document.getElementById('gpx-preview').innerHTML = '';
+
+      document.getElementById('route-section').style.display = 'block';
+      document.getElementById('elevation-section').style.display = 'block';
+      document.getElementById('stats-section').style.display = 'block';
+
+      setTimeout(() => {
+        map.invalidateSize();
+        if (routeLine) {
+          map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+        }
+      }, 50);
+
+      drawElevationChart(rawGpxPoints, dists);
+      document.getElementById('elevation-chart').style.display = 'block';
+      document.getElementById('elevation-missing').style.display = 'none';
+
+      document.getElementById('stat-dist').textContent = Math.round(currentDistance);
+      document.getElementById('stat-elev').textContent = formatElev(currentElevGain, currentElevLoss);
+      document.getElementById('stat-time').textContent = formatDuration(currentDurationHours);
+
+      document.getElementById('loading-overlay').style.display = 'none';
+    }
+
     async function initPage() {
       if (!(await window.journeyService.isLoggedIn())) {
         document.getElementById('loading-overlay').style.display = 'none';
@@ -202,6 +416,17 @@
         `;
         return;
       }
+
+      // If redirected back from Strava OAuth, open activity picker
+      if (urlParams.get('strava') === 'connected') {
+        loadJourney();
+        setTimeout(() => {
+          openStravaModal();
+          loadStravaActivities();
+        }, 300);
+        return;
+      }
+
       loadJourney();
     }
 
