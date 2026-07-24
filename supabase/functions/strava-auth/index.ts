@@ -17,11 +17,17 @@ interface StravaTokenResponse {
 export default {
   fetch: withSupabase({ auth: ["publishable"] }, async (req, ctx) => {
     try {
-      const { code } = await req.json();
+      const { code, state } = await req.json();
 
       if (!code || typeof code !== "string") {
         return Response.json(
           { error: "Missing authorization code" },
+          { status: 400 }
+        );
+      }
+      if (!state || typeof state !== "string") {
+        return Response.json(
+          { error: "Missing OAuth state" },
           { status: 400 }
         );
       }
@@ -36,6 +42,31 @@ export default {
           { status: 500 }
         );
       }
+
+      // Look up the user_id associated with this OAuth state.
+      // State records are short-lived and deleted after use.
+      const { data: stateRow, error: stateError } = await ctx.supabaseAdmin
+        .from("strava_oauth_states")
+        .select("user_id")
+        .eq("state", state)
+        .gt("expires_at", new Date().toISOString())
+        .single();
+
+      if (stateError || !stateRow) {
+        console.error("[strava-auth] invalid or expired state:", stateError);
+        return Response.json(
+          { error: "Invalid or expired OAuth state" },
+          { status: 400 }
+        );
+      }
+
+      const userId = stateRow.user_id;
+
+      // Delete the state so it cannot be reused
+      await ctx.supabaseAdmin
+        .from("strava_oauth_states")
+        .delete()
+        .eq("state", state);
 
       // Exchange code for tokens
       const tokenRes = await fetch("https://www.strava.com/oauth/token", {
@@ -67,19 +98,10 @@ export default {
         athlete,
       } = tokenData;
 
-      // Upsert token for the authenticated user
-      const user = ctx.user;
-      if (!user) {
-        return Response.json(
-          { error: "Unauthorized" },
-          { status: 401 }
-        );
-      }
-
-      const { error } = await ctx.supabase
+      const { error } = await ctx.supabaseAdmin
         .from("strava_tokens")
         .upsert({
-          user_id: user.id,
+          user_id: userId,
           access_token,
           refresh_token,
           expires_at,

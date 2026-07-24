@@ -240,7 +240,24 @@
         alert('请先登录后再连接 Strava');
         return;
       }
-      // Give localStorage a moment to flush the session tokens.
+
+      const state = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      // Save state to DB so the callback can identify the user without relying on session persistence.
+      const { error: stateError } = await supabaseClient
+        .from('strava_oauth_states')
+        .insert({
+          state,
+          user_id: session.user.id,
+        });
+
+      if (stateError) {
+        console.error('[strava] failed to save oauth state:', stateError);
+        alert('准备 Strava 授权失败，请重试');
+        return;
+      }
+
+      // Give localStorage a moment to flush the session tokens (best-effort).
       await new Promise(r => setTimeout(r, 300));
 
       const redirectUri = `${location.origin}/strava-callback.html`;
@@ -252,7 +269,8 @@
         `response_type=code&` +
         `redirect_uri=${encodeURIComponent(redirectUri)}&` +
         `approval_prompt=auto&` +
-        `scope=${encodeURIComponent(scope)}`;
+        `scope=${encodeURIComponent(scope)}&` +
+        `state=${encodeURIComponent(state)}`;
 
       location.href = authUrl;
     }

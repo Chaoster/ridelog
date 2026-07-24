@@ -69,7 +69,7 @@
     const urlParams = new URLSearchParams(location.search);
     const code = urlParams.get('code');
     const error = urlParams.get('error');
-    const fromPage = urlParams.get('state') || 'daily-segment';
+    const state = urlParams.get('state');
 
     function goBack() {
       location.href = 'daily-segment.html';
@@ -92,42 +92,20 @@
         return;
       }
 
-      // Debug: show session state
-      const { data: { session: initialSession } } = await supabaseClient.auth.getSession();
-      const { data: { user: initialUser } } = await supabaseClient.auth.getUser();
-      console.log('[strava-callback] initial session:', initialSession);
-      console.log('[strava-callback] initial user:', initialUser);
-
-      // Wait for session to be ready after OAuth redirect
+      // Try to restore session after OAuth redirect, but do not require it.
+      // The actual user identification is done via the state parameter stored in DB.
       let attempts = 0;
-      while (attempts < 20) {
+      while (attempts < 10) {
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (session?.user) break;
-
-        // Try to refresh/recover session on the first few attempts
-        if (attempts < 3) {
-          try {
-            await supabaseClient.auth.refreshSession();
-          } catch (e) {
-            // ignore
-          }
-        }
-
-        await new Promise(r => setTimeout(r, 300));
+        try { await supabaseClient.auth.refreshSession(); } catch { /* ignore */ }
+        await new Promise(r => setTimeout(r, 200));
         attempts++;
-      }
-
-      const { data: { session } } = await supabaseClient.auth.getSession();
-      console.log('[strava-callback] final session:', session);
-
-      if (!session?.user) {
-        showError(`登录会话未恢复。initialUser=${initialUser ? 'yes' : 'no'}, finalUser=${session?.user ? 'yes' : 'no'}。请返回 daily-segment 重新登录。`);
-        return;
       }
 
       try {
         const { data, error: fnError } = await supabaseClient.functions.invoke('strava-auth', {
-          body: { code }
+          body: { code, state }
         });
 
         if (fnError) throw fnError;
