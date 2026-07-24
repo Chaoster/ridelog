@@ -180,7 +180,7 @@ export default {
         const text = await activitiesRes.text();
         console.error("[strava-activities] Strava API error:", activitiesRes.status, text);
         return Response.json(
-          { error: "Failed to fetch Strava activities" },
+          { error: `Failed to fetch Strava activities: ${text || activitiesRes.status}` },
           { status: 400 }
         );
       }
