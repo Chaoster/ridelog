@@ -92,6 +92,21 @@
         return;
       }
 
+      // Wait for session to be ready after OAuth redirect
+      let attempts = 0;
+      while (attempts < 10) {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session?.user) break;
+        await new Promise(r => setTimeout(r, 200));
+        attempts++;
+      }
+
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (!session?.user) {
+        showError('登录会话已过期，请返回每日记录重新登录后再试。');
+        return;
+      }
+
       try {
         const { data, error: fnError } = await supabaseClient.functions.invoke('strava-auth', {
           body: { code }
