@@ -277,7 +277,8 @@
 
     async function importFromStrava() {
       const isConnected = await checkStravaAuth();
-      if (!isConnected) {
+      const hasSessionToken = !!getStravaSessionToken();
+      if (!isConnected || !hasSessionToken) {
         startStravaOAuth();
         return;
       }
