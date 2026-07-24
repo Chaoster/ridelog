@@ -1,5 +1,6 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
+import { getEnv } from "../_shared/env.ts";
 
 interface StravaTokenRow {
   user_id: string;
@@ -119,8 +120,8 @@ export default {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
 
-      const clientId = Deno.env.get("STRAVA_CLIENT_ID");
-      const clientSecret = Deno.env.get("STRAVA_CLIENT_SECRET");
+      const clientId = await getEnv("STRAVA_CLIENT_ID");
+      const clientSecret = await getEnv("STRAVA_CLIENT_SECRET");
 
       if (!clientId || !clientSecret) {
         console.error("[strava-activities] Missing Strava credentials");
