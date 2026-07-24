@@ -111,6 +111,12 @@
         if (fnError) throw fnError;
         if (!data || data.error) throw new Error(data?.error || '保存授权信息失败');
 
+        // Persist the short-lived import session token so subsequent Strava API calls work
+        // even when the Supabase session is not available after redirect.
+        if (data.session_token) {
+          sessionStorage.setItem('stravaImportSessionToken', data.session_token);
+        }
+
         // 授权成功，跳转回之前的 daily-segment.html
         const returnUrl = sessionStorage.getItem('stravaCallbackReturnUrl') || 'daily-segment.html';
         sessionStorage.removeItem('stravaCallbackReturnUrl');

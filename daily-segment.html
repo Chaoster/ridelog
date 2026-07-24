@@ -297,10 +297,19 @@
       document.getElementById('strava-modal').classList.remove('active');
     }
 
+    function getStravaSessionToken() {
+      return sessionStorage.getItem('stravaImportSessionToken');
+    }
+
     async function loadStravaActivities() {
       try {
+        const sessionToken = getStravaSessionToken();
+        if (!sessionToken) {
+          throw new Error('Strava 会话已过期，请重新授权');
+        }
+
         const { data, error } = await supabaseClient.functions.invoke('strava-activities', {
-          queryParams: { page: '1', per_page: '30' }
+          queryParams: { page: '1', per_page: '30', session_token: sessionToken }
         });
 
         if (error) throw error;
@@ -359,8 +368,13 @@
       document.getElementById('loading-overlay').style.display = 'flex';
 
       try {
+        const sessionToken = getStravaSessionToken();
+        if (!sessionToken) {
+          throw new Error('Strava 会话已过期，请重新授权');
+        }
+
         const { data, error } = await supabaseClient.functions.invoke('strava-activity-streams', {
-          body: { activityId }
+          body: { activityId, sessionToken }
         });
 
         if (error) throw error;

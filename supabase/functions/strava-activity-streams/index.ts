@@ -33,6 +33,21 @@ interface StravaStreamsResponse {
   time?: StravaStream;
 }
 
+async function resolveUserFromSessionToken(
+  supabaseAdmin: any,
+  sessionToken: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("strava_session_tokens")
+    .select("user_id")
+    .eq("token", sessionToken)
+    .gt("expires_at", new Date().toISOString())
+    .single();
+
+  if (error || !data) return null;
+  return data.user_id;
+}
+
 async function refreshStravaToken(
   refreshToken: string,
   clientId: string,
@@ -58,12 +73,12 @@ async function refreshStravaToken(
 }
 
 async function getValidAccessToken(
-  supabase: any,
+  supabaseAdmin: any,
   userId: string,
   clientId: string,
   clientSecret: string
 ): Promise<string> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("strava_tokens")
     .select("*")
     .eq("user_id", userId)
@@ -83,7 +98,7 @@ async function getValidAccessToken(
       clientSecret
     );
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from("strava_tokens")
       .update({
         access_token: refreshed.access_token,
@@ -113,9 +128,21 @@ function formatDuration(seconds: number): string {
 export default {
   fetch: withSupabase({ auth: ["publishable"] }, async (req, ctx) => {
     try {
-      const user = ctx.user;
-      if (!user) {
-        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      const { activityId, sessionToken } = await req.json();
+
+      if (!sessionToken || typeof sessionToken !== "string") {
+        return Response.json(
+          { error: "Missing session token" },
+          { status: 400 }
+        );
+      }
+
+      const userId = await resolveUserFromSessionToken(ctx.supabaseAdmin, sessionToken);
+      if (!userId) {
+        return Response.json(
+          { error: "Invalid or expired session token" },
+          { status: 401 }
+        );
       }
 
       const clientId = await getEnv("STRAVA_CLIENT_ID");
@@ -129,8 +156,6 @@ export default {
         );
       }
 
-      const { activityId } = await req.json();
-
       if (!activityId || typeof activityId !== "number") {
         return Response.json(
           { error: "Missing or invalid activityId" },
@@ -139,8 +164,8 @@ export default {
       }
 
       const accessToken = await getValidAccessToken(
-        ctx.supabase,
-        user.id,
+        ctx.supabaseAdmin,
+        userId,
         clientId,
         clientSecret
       );

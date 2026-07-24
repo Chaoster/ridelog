@@ -119,9 +119,25 @@ export default {
         );
       }
 
+      // Create a short-lived session token for subsequent Strava API calls.
+      // This avoids relying on JWT session persistence across OAuth redirects.
+      const sessionToken = crypto.randomUUID();
+      const { error: sessionError } = await ctx.supabaseAdmin
+        .from("strava_session_tokens")
+        .insert({
+          token: sessionToken,
+          user_id: userId,
+        });
+
+      if (sessionError) {
+        console.error("[strava-auth] Failed to create session token:", sessionError);
+        // Non-fatal: auth succeeded, but the import session won't work without this token.
+      }
+
       return Response.json({
         success: true,
         athlete_id: athlete?.id ?? null,
+        session_token: sessionError ? null : sessionToken,
       });
     } catch (err) {
       console.error("[strava-auth] Unexpected error:", err);
