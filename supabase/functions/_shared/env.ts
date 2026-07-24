@@ -37,25 +37,36 @@ let cachedFileEnv: Record<string, string> | null = null;
 export async function loadFileEnv(): Promise<Record<string, string>> {
   if (cachedFileEnv) return cachedFileEnv;
 
+  try {
+    const cwd = Deno.cwd();
+    console.log(`[env] current working directory: ${cwd}`);
+  } catch (err) {
+    console.log(`[env] cannot get cwd: ${err}`);
+  }
+
   for (const path of POSSIBLE_ENV_PATHS) {
     try {
       const content = await Deno.readTextFile(path);
       cachedFileEnv = parseEnv(content);
       console.log(`[env] loaded env from ${path}`);
       return cachedFileEnv;
-    } catch {
-      // ignore and try next path
+    } catch (err) {
+      console.log(`[env] failed to read ${path}: ${(err as Error).message}`);
     }
   }
 
+  console.error("[env] could not load .env from any known path");
   cachedFileEnv = {};
   return cachedFileEnv;
 }
 
 export async function getEnv(key: string): Promise<string | undefined> {
   const fromDeno = Deno.env.get(key);
+  console.log(`[env] Deno.env.get(${key}): ${fromDeno ? "set" : "not set"}`);
   if (fromDeno) return fromDeno;
 
   const fromFile = await loadFileEnv();
-  return fromFile[key];
+  const value = fromFile[key];
+  console.log(`[env] file env ${key}: ${value ? "set" : "not set"}`);
+  return value;
 }
