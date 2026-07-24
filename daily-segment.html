@@ -310,7 +310,7 @@
         }
 
         const { data, error } = await supabaseClient.functions.invoke('strava-activities', {
-          queryParams: { page: '1', per_page: '30', session_token: sessionToken }
+          body: { page: 1, per_page: 30, sessionToken }
         });
 
         if (error) throw error;

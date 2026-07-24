@@ -129,10 +129,9 @@ function formatDuration(seconds: number): string {
 export default {
   fetch: withSupabase({ auth: ["publishable"] }, async (req, ctx) => {
     try {
-      const url = new URL(req.url);
-      const sessionToken = url.searchParams.get("session_token");
+      const { page: pageParam, per_page: perPageParam, sessionToken } = await req.json();
 
-      if (!sessionToken) {
+      if (!sessionToken || typeof sessionToken !== "string") {
         return Response.json(
           { error: "Missing session token" },
           { status: 400 }
@@ -158,8 +157,8 @@ export default {
         );
       }
 
-      const page = parseInt(url.searchParams.get("page") || "1", 10);
-      const perPage = parseInt(url.searchParams.get("per_page") || "30", 10);
+      const page = parseInt(pageParam || "1", 10);
+      const perPage = parseInt(perPageParam || "30", 10);
 
       const accessToken = await getValidAccessToken(
         ctx.supabaseAdmin,
