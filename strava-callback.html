@@ -111,8 +111,11 @@
         if (fnError) throw fnError;
         if (!data || data.error) throw new Error(data?.error || '保存授权信息失败');
 
-        // 授权成功，跳转回 daily-segment.html
-        location.href = 'daily-segment.html?strava=connected';
+        // 授权成功，跳转回之前的 daily-segment.html
+        const returnUrl = sessionStorage.getItem('stravaCallbackReturnUrl') || 'daily-segment.html';
+        sessionStorage.removeItem('stravaCallbackReturnUrl');
+        const separator = returnUrl.includes('?') ? '&' : '?';
+        location.href = returnUrl + separator + 'strava=connected';
       } catch (err) {
         console.error('[strava-callback] auth error:', err);
         showError(err.message || '连接 Strava 失败，请重试。');
