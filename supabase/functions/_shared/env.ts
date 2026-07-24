@@ -34,12 +34,25 @@ function parseEnv(content: string): Record<string, string> {
 
 let cachedFileEnv: Record<string, string> | null = null;
 
+async function listFiles(dir: string): Promise<string> {
+  try {
+    const entries = [];
+    for await (const entry of Deno.readDir(dir)) {
+      entries.push(entry.name);
+    }
+    return entries.join(", ");
+  } catch (err) {
+    return `error: ${(err as Error).message}`;
+  }
+}
+
 export async function loadFileEnv(): Promise<Record<string, string>> {
   if (cachedFileEnv) return cachedFileEnv;
 
   try {
     const cwd = Deno.cwd();
-    console.log(`[env] current working directory: ${cwd}`);
+    console.log(`[env] cwd: ${cwd}`);
+    console.log(`[env] files in cwd: ${await listFiles(cwd)}`);
   } catch (err) {
     console.log(`[env] cannot get cwd: ${err}`);
   }
