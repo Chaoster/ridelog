@@ -421,31 +421,19 @@ enabled = true
 enabled = true
 verify_jwt = true
 import_map = "./functions/strava-auth/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/strava-auth/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/strava-auth/*.html" ]
+static_files = [ "../.env" ]
 
 [functions.strava-activities]
 enabled = true
 verify_jwt = true
 import_map = "./functions/strava-activities/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/strava-activities/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/strava-activities/*.html" ]
+static_files = [ "../.env" ]
 
 [functions.strava-activity-streams]
 enabled = true
 verify_jwt = true
 import_map = "./functions/strava-activity-streams/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/strava-activity-streams/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/strava-activity-streams/*.html" ]
+static_files = [ "../.env" ]
