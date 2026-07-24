@@ -1,6 +1,7 @@
-// Helper to load environment variables from .env files when Deno.env.get() is empty.
-// This is useful for local Supabase CLI development where shell env vars are not
-// always passed through to Edge Functions.
+// Helper to load environment variables from multiple sources:
+// 1. Deno.env.get() (production via supabase secrets set, or shell export)
+// 2. .env files in common locations
+// 3. ./local-env.ts fallback (for local dev when env vars / .env are not available)
 
 const POSSIBLE_ENV_PATHS = [
   "./.env",
@@ -33,29 +34,23 @@ function parseEnv(content: string): Record<string, string> {
 }
 
 let cachedFileEnv: Record<string, string> | null = null;
+let cachedLocalEnv: Record<string, string> | null = null;
 
-async function listFiles(dir: string): Promise<string> {
+async function loadLocalEnv(): Promise<Record<string, string>> {
+  if (cachedLocalEnv) return cachedLocalEnv;
   try {
-    const entries = [];
-    for await (const entry of Deno.readDir(dir)) {
-      entries.push(entry.name);
-    }
-    return entries.join(", ");
+    const mod = await import("./local-env.ts");
+    cachedLocalEnv = mod.default || {};
+    console.log("[env] loaded local-env.ts fallback");
   } catch (err) {
-    return `error: ${(err as Error).message}`;
+    console.log(`[env] local-env.ts not available: ${(err as Error).message}`);
+    cachedLocalEnv = {};
   }
+  return cachedLocalEnv;
 }
 
 export async function loadFileEnv(): Promise<Record<string, string>> {
   if (cachedFileEnv) return cachedFileEnv;
-
-  try {
-    const cwd = Deno.cwd();
-    console.log(`[env] cwd: ${cwd}`);
-    console.log(`[env] files in cwd: ${await listFiles(cwd)}`);
-  } catch (err) {
-    console.log(`[env] cannot get cwd: ${err}`);
-  }
 
   for (const path of POSSIBLE_ENV_PATHS) {
     try {
@@ -63,23 +58,22 @@ export async function loadFileEnv(): Promise<Record<string, string>> {
       cachedFileEnv = parseEnv(content);
       console.log(`[env] loaded env from ${path}`);
       return cachedFileEnv;
-    } catch (err) {
-      console.log(`[env] failed to read ${path}: ${(err as Error).message}`);
+    } catch {
+      // ignore and try next path
     }
   }
 
-  console.error("[env] could not load .env from any known path");
   cachedFileEnv = {};
   return cachedFileEnv;
 }
 
 export async function getEnv(key: string): Promise<string | undefined> {
   const fromDeno = Deno.env.get(key);
-  console.log(`[env] Deno.env.get(${key}): ${fromDeno ? "set" : "not set"}`);
   if (fromDeno) return fromDeno;
 
   const fromFile = await loadFileEnv();
-  const value = fromFile[key];
-  console.log(`[env] file env ${key}: ${value ? "set" : "not set"}`);
-  return value;
+  if (fromFile[key]) return fromFile[key];
+
+  const fromLocal = await loadLocalEnv();
+  return fromLocal[key];
 }
