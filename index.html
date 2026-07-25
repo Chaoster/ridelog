@@ -17,12 +17,62 @@
   <script src="js/supabase-config.js"></script>
   <script src="js/login-modal.js"></script>
   <script>
+    (function () {
+      const isStandalone = window.navigator.standalone === true ||
+        window.matchMedia('(display-mode: standalone)').matches;
+      document.documentElement.classList.toggle('pwa-standalone', isStandalone);
+    })();
+  </script>
+  <style>
+    #pwa-splash {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999999;
+      background: var(--primary, #FF7B3D);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+    }
+    .pwa-standalone #pwa-splash { display: flex; }
+    .pwa-splash-icon {
+      width: 120px;
+      height: 120px;
+      border-radius: 24px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+    }
+    .pwa-splash-hide {
+      opacity: 0;
+      transition: opacity 0.4s ease-out;
+      pointer-events: none;
+    }
+  </style>
+  <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js');
     }
   </script>
 </head>
 <body>
+  <!-- PWA Splash Screen -->
+  <div id="pwa-splash">
+    <img src="images/icon.png" alt="Donke" class="pwa-splash-icon">
+  </div>
+
+  <script>
+    (function () {
+      const splash = document.getElementById('pwa-splash');
+      if (!splash) return;
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          splash.classList.add('pwa-splash-hide');
+          splash.addEventListener('transitionend', function () {
+            splash.style.display = 'none';
+          });
+        }, 1500);
+      });
+    })();
+  </script>
   <!-- Header -->
   <div class="header">
     <a href="index.html" class="logo-link" aria-label="回到首页">
