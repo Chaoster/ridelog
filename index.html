@@ -21,7 +21,10 @@
     (function () {
       const isStandalone = window.navigator.standalone === true ||
         window.matchMedia('(display-mode: standalone)').matches;
-      document.documentElement.classList.toggle('pwa-standalone', isStandalone);
+      const alreadyShown = window.sessionStorage.getItem('pwaSplashShown') === 'true';
+      if (isStandalone && !alreadyShown) {
+        document.documentElement.classList.add('show-pwa-splash');
+      }
     })();
   </script>
   <style>
@@ -35,7 +38,7 @@
       justify-content: center;
       flex-direction: column;
     }
-    .pwa-standalone #pwa-splash { display: flex; }
+    .show-pwa-splash #pwa-splash { display: flex; }
     .pwa-splash-icon {
       width: 300px;
       height: 300px;
@@ -62,7 +65,10 @@
   <script>
     (function () {
       const splash = document.getElementById('pwa-splash');
-      if (!splash) return;
+      if (!splash || splash.style.display === 'none') return;
+      if (!document.documentElement.classList.contains('show-pwa-splash')) return;
+
+      window.sessionStorage.setItem('pwaSplashShown', 'true');
       window.addEventListener('load', function () {
         setTimeout(function () {
           splash.classList.add('pwa-splash-hide');
