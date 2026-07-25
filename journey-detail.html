@@ -423,13 +423,13 @@
     // Fill header info
     document.getElementById('detail-title').textContent = journey.title;
     if (isUserJourney) {
-      document.getElementById('detail-author').textContent = '我';
+      document.getElementById('detail-author').textContent = '作者：我';
       document.getElementById('detail-date').textContent = journey.completedAt || journey.createdAt;
     } else if (journey.author) {
-      document.getElementById('detail-author').textContent = journey.author;
+      document.getElementById('detail-author').textContent = '作者：' + journey.author;
       document.getElementById('detail-date').textContent = journey.date;
     } else {
-      document.getElementById('detail-author').textContent = '骑行者';
+      document.getElementById('detail-author').textContent = '作者：骑行者';
       document.getElementById('detail-date').textContent = journey.completedAt || journey.createdAt;
     }
 

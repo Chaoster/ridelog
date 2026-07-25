@@ -202,18 +202,24 @@
         ongoingEl.innerHTML = ongoing.filter(j => j.id).map(j => {
           const segCount = (j.segments || []).length;
           return `
-            <div class="card" onclick="location.href='ongoing?id=${j.id}'">
-              <div class="card-content">
-                <div style="display:flex;align-items:center;justify-content:space-between;">
-                  <div class="card-title">${j.title}</div>
-                  <span class="status-badge status-ongoing">进行中</span>
-                </div>
-                <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">
-                  创建于 ${j.createdAt}
-                </div>
-                <div style="display:flex;gap:16px;margin-top:10px;font-size:13px;color:var(--text-secondary);">
-                  <span>${segCount} 天已记录</span>
-                  <span>点击进入管理</span>
+            <div class="card" onclick="location.href='ongoing?id=${j.id}'" style="margin:12px 20px;">
+              <div class="card-content" style="padding:12px;">
+                <div style="display:flex;gap:12px;align-items:center;">
+                  <div style="width:80px;height:80px;border-radius:10px;background:rgba(255,123,61,0.15);flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg>
+                  </div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                      <div class="card-title" style="margin-bottom:0;">${j.title}</div>
+                      <span class="status-badge status-ongoing">进行中</span>
+                    </div>
+                    <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">
+                      创建于 ${j.createdAt}
+                    </div>
+                    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--text-secondary);">
+                      <span>${segCount} 天已记录</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
