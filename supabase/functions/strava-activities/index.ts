@@ -37,14 +37,29 @@ async function resolveUserFromSessionToken(
   supabaseAdmin: any,
   sessionToken: string
 ): Promise<string | null> {
+  console.log("[strava-activities] resolving session token:", sessionToken.slice(0, 8) + "...");
   const { data, error } = await supabaseAdmin
     .from("strava_session_tokens")
-    .select("user_id")
+    .select("user_id, expires_at")
     .eq("token", sessionToken)
-    .gt("expires_at", new Date().toISOString())
     .single();
 
-  if (error || !data) return null;
+  if (error) {
+    console.error("[strava-activities] session token lookup error:", error);
+    return null;
+  }
+
+  if (!data) {
+    console.error("[strava-activities] session token not found");
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  if (data.expires_at <= now) {
+    console.error("[strava-activities] session token expired. expires_at:", data.expires_at, "now:", now);
+    return null;
+  }
+
   return data.user_id;
 }
 
