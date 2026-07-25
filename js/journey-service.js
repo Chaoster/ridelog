@@ -118,7 +118,7 @@
           photoCount: photos.length,
           photos,
           photoUrls: photos.map(p => p.url),
-          gpx: simplifiedGpx.length > 0,
+          gpx: simplifiedGpx.length > 0 || !!seg.route_svg,
           gpxPoints: simplifiedGpx,
           routeSvg: seg.route_svg || '',
           distance: Number(seg.distance) || 0,
