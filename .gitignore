@@ -3,3 +3,4 @@ test-results/
 supabase/.env
 supabase/functions/_shared/local-env.ts
 supabase/snippets/
+docs/strava-credentials.md
