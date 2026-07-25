@@ -506,11 +506,11 @@ input[type="date"] {
   border-radius: 50%;
   border: none;
   background: var(--bg);
+  color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 18px;
 }
 
 .page-title {
