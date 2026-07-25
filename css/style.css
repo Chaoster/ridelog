@@ -45,7 +45,7 @@ body.page-no-nav {
   justify-content: space-between;
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 999;
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
 
@@ -517,7 +517,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   background: var(--surface);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 999;
 }
 
 .back-btn {
