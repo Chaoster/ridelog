@@ -2,3 +2,4 @@ test-results/
 .env
 supabase/.env
 supabase/functions/_shared/local-env.ts
+supabase/snippets/
