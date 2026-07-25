@@ -416,3 +416,24 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+[functions.strava-auth]
+enabled = true
+verify_jwt = true
+import_map = "./functions/strava-auth/deno.json"
+entrypoint = "./functions/strava-auth/index.ts"
+static_files = [ "../.env" ]
+
+[functions.strava-activities]
+enabled = true
+verify_jwt = true
+import_map = "./functions/strava-activities/deno.json"
+entrypoint = "./functions/strava-activities/index.ts"
+static_files = [ "../.env" ]
+
+[functions.strava-activity-streams]
+enabled = true
+verify_jwt = true
+import_map = "./functions/strava-activity-streams/deno.json"
+entrypoint = "./functions/strava-activity-streams/index.ts"
+static_files = [ "../.env" ]

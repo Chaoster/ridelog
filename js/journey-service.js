@@ -90,10 +90,14 @@
     const segments = (segmentRows || [])
       .sort((a, b) => a.day_index - b.day_index)
       .map(seg => {
-        const photos = (photosBySegment[seg.id] || [])
+        const rawPhotos = photosBySegment[seg.id] || [];
+        const photos = rawPhotos
           .sort((a, b) => a.created_at - b.created_at)
           .slice(0, photoLimit || Infinity)
           .map(p => ({ url: p.url, lat: Number(p.lat) || 0, lng: Number(p.lng) || 0 }));
+        if (photos.length > 0) {
+          console.log('[buildJourney] segment', seg.id, 'day', seg.day_index, 'raw photo rows:', rawPhotos.map(p => ({ url: p.url?.slice(-20), lat: p.lat, lng: p.lng, keys: Object.keys(p) })), 'mapped photos:', photos);
+        }
 
         const rawGpxRows = (gpxBySegment[seg.id] || []).sort((a, b) => a.point_index - b.point_index);
         const gpxPoints = rawGpxRows
@@ -114,7 +118,7 @@
           photoCount: photos.length,
           photos,
           photoUrls: photos.map(p => p.url),
-          gpx: simplifiedGpx.length > 0,
+          gpx: simplifiedGpx.length > 0 || !!seg.route_svg,
           gpxPoints: simplifiedGpx,
           routeSvg: seg.route_svg || '',
           distance: Number(seg.distance) || 0,

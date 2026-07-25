@@ -579,22 +579,44 @@
     let allPhotoMarkers = [];
 
     function getPhotoList(seg) {
-      if (seg.photos && seg.photos.length > 0) return seg.photos;
-      if (!seg.photoUrls || seg.photoUrls.length === 0) return [];
-      return seg.photoUrls.map((url, i) => {
+      console.log('[journey-detail getPhotoList] seg.day:', seg.day, 'photos:', seg.photos?.length, 'photoUrls:', seg.photoUrls?.length, 'gpxPoints:', seg.gpxPoints?.length);
+      let list = [];
+      if (seg.photos && seg.photos.length > 0) {
+        seg.photos.forEach((p, i) => console.log('  photo', i, 'lat:', p.lat, 'lng:', p.lng, 'url:', p.url?.slice(-30)));
+        list = seg.photos.map(p => ({ url: p.url, lat: p.lat || 0, lng: p.lng || 0 }));
+      } else if (seg.photoUrls && seg.photoUrls.length > 0) {
+        list = seg.photoUrls.map(url => ({ url, lat: 0, lng: 0 }));
+      }
+
+      const withGps = list.filter(p => p.lat !== 0 || p.lng !== 0);
+      const noGps = list.filter(p => p.lat === 0 && p.lng === 0);
+
+      if (noGps.length > 0) {
         if (seg.gpxPoints && seg.gpxPoints.length > 0) {
-          const ratio = seg.photoUrls.length <= 1 ? 0 : i / (seg.photoUrls.length - 1);
-          const idx = Math.min(Math.floor(ratio * (seg.gpxPoints.length - 1)), seg.gpxPoints.length - 1);
-          const pt = seg.gpxPoints[idx];
-          return { url, lat: pt[0], lng: pt[1] };
+          noGps.forEach((p, i) => {
+            const ratio = noGps.length <= 1 ? 0 : i / (noGps.length - 1);
+            const idx = Math.min(Math.floor(ratio * (seg.gpxPoints.length - 1)), seg.gpxPoints.length - 1);
+            const pt = seg.gpxPoints[idx];
+            withGps.push({ url: p.url, lat: pt[0], lng: pt[1] });
+          });
+        } else {
+          const baseLat = 36.95 + (seg.day || 1) * 0.02;
+          const baseLng = 100.90 + (seg.day || 1) * 0.02;
+          noGps.forEach((p, i) => {
+            withGps.push({
+              url: p.url,
+              lat: baseLat + (Math.random() - 0.5) * 0.05,
+              lng: baseLng + (Math.random() - 0.5) * 0.05
+            });
+          });
         }
-        const baseLat = 36.95 + (seg.day || 1) * 0.02;
-        const baseLng = 100.90 + (seg.day || 1) * 0.02;
-        return { url, lat: baseLat + (Math.random() - 0.5) * 0.05, lng: baseLng + (Math.random() - 0.5) * 0.05 };
-      });
+      }
+
+      return withGps;
     }
 
     if (segs.length > 0) {
+      console.log('[journey-detail map] total segments:', segs.length);
       // 1st pass: collect all photo positions
       const allPhotoPositions = [];
       segs.forEach(seg => {
@@ -602,8 +624,10 @@
           if (p.lat !== 0 || p.lng !== 0) allPhotoPositions.push(p);
         });
       });
+      console.log('[journey-detail map] total photo positions:', allPhotoPositions.length);
 
       // 2nd pass: draw routes + place day markers away from photos
+      let markerCount = 0;
       segs.forEach((seg, idx) => {
         const color = colors[idx % colors.length];
 
@@ -674,8 +698,10 @@
             }
           });
           allPhotoMarkers.push(marker);
+          markerCount++;
         });
       });
+      console.log('[journey-detail map] total photo markers added:', markerCount);
     } else if (journey.routeCoords && journey.routeCoords.length > 0) {
       // Sample journey
       journey.routeCoords.forEach((dayCoords, idx) => {
@@ -844,7 +870,7 @@
       }
 
       const editLink = canEdit
-        ? `<span style="font-size:12px;color:var(--text-secondary);cursor:pointer;" onclick="event.stopPropagation();location.href='daily-segment.html?edit=1&amp;idx=${idx}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">&#9998; 编辑</span>`
+        ? `<span style="font-size:12px;color:var(--text-secondary);cursor:pointer;" onclick="event.stopPropagation();location.href='daily-segment?edit=1&amp;idx=${idx}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">&#9998; 编辑</span>`
         : '';
 
       return `

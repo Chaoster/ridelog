@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Strava 授权中 - RideLog</title>
+  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <style>
+    .callback-container {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      text-align: center;
+    }
+    .callback-spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .callback-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .callback-desc {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+    .callback-error {
+      color: #e74c3c;
+      font-size: 14px;
+      margin-bottom: 24px;
+      max-width: 320px;
+    }
+  </style>
+</head>
+<body>
+  <div class="callback-container">
+    <div id="loading-state">
+      <div class="callback-spinner"></div>
+      <div class="callback-title">正在连接 Strava</div>
+      <div class="callback-desc">请稍候，正在保存授权信息...</div>
+    </div>
+
+    <div id="error-state" style="display:none;">
+      <div class="callback-title" style="color:#e74c3c;">授权失败</div>
+      <div id="error-message" class="callback-error"></div>
+      <button class="btn btn-primary" onclick="goBack()">返回每日记录</button>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(location.search);
+    const code = urlParams.get('code');
+    const error = urlParams.get('error');
+    const state = urlParams.get('state');
+
+    function goBack() {
+      location.href = 'daily-segment';
+    }
+
+    function showError(message) {
+      document.getElementById('loading-state').style.display = 'none';
+      document.getElementById('error-state').style.display = 'block';
+      const debug = [];
+      urlParams.forEach((value, key) => debug.push(`${key}=${value}`));
+      document.getElementById('error-message').innerHTML = `
+        <div>${message}</div>
+        <div style="margin-top:12px;font-size:12px;color:#666;word-break:break-all;">
+          URL: ${location.href}<br>
+          Params: ${debug.join('&') || '(none)'}
+        </div>
+      `;
+    }
+
+    function getReturnUrl() {
+      return sessionStorage.getItem('stravaCallbackReturnUrl') || 'daily-segment';
+    }
+
+    async function handleCallback() {
+      if (error) {
+        showError('你取消了 Strava 授权，或未授予必要权限。');
+        return;
+      }
+
+      if (!code) {
+        showError('未收到 Strava 授权码，请重试。');
+        return;
+      }
+
+      // Try to restore session after OAuth redirect, but do not require it.
+      // The actual user identification is done via the state parameter stored in DB.
+      let attempts = 0;
+      while (attempts < 10) {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session?.user) break;
+        try { await supabaseClient.auth.refreshSession(); } catch { /* ignore */ }
+        await new Promise(r => setTimeout(r, 200));
+        attempts++;
+      }
+
+      const returnUrl = getReturnUrl();
+      sessionStorage.removeItem('stravaCallbackReturnUrl');
+
+      try {
+        const { data, error: fnError } = await supabaseClient.functions.invoke('strava-auth', {
+          body: { code, state }
+        });
+
+        if (fnError) throw fnError;
+        if (!data || data.error) throw new Error(data?.error || '保存授权信息失败');
+
+        // Persist the short-lived import session token so subsequent Strava API calls work
+        // even when the Supabase session is not available after redirect.
+        if (data.session_token) {
+          sessionStorage.setItem('stravaImportSessionToken', data.session_token);
+        }
+
+        // 授权成功，跳转回之前的 daily-segment
+        const separator = returnUrl.includes('?') ? '&' : '?';
+        const targetUrl = returnUrl + separator + 'strava=connected';
+        // Use location.replace so the callback page is not kept in session history.
+        location.replace(targetUrl);
+      } catch (err) {
+        console.error('[strava-callback] auth error:', err);
+        const message = err instanceof Error ? err.message : '连接 Strava 失败，请重试。';
+
+        // If the OAuth state expired (e.g. user navigated back to this page after a successful auth),
+        // just return to the daily-segment page instead of showing an error.
+        if (message.includes('Strava授权已过期，请重新授权')) {
+          location.replace(returnUrl);
+          return;
+        }
+
+        showError(message);
+      }
+    }
+
+    handleCallback();
+  </script>
+</body>
+</html>

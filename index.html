@@ -171,7 +171,7 @@
         }
 
         return `
-          <div class="card" onclick="location.href='${isOwnOngoing ? 'ongoing' : 'journey-detail'}.html?id=${j.id}&from=index'">
+          <div class="card" onclick="location.href='${isOwnOngoing ? 'ongoing' : 'journey-detail'}?id=${j.id}&from=index'">
             ${coverHtml}
             <div class="card-content">
               <div class="card-title">${j.title}</div>
@@ -199,7 +199,7 @@
 
       // Build sample journey cards
       const sampleCards = SAMPLE_JOURNEYS.map(j => `
-        <div class="card" onclick="location.href='journey-detail.html?id=${j.id}&from=index'">
+        <div class="card" onclick="location.href='journey-detail?id=${j.id}&from=index'">
           <img class="card-image" src="${j.cover}" alt="${j.title}">
           <div class="card-content">
             <div class="card-title">${j.title}</div>
