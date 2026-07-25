@@ -1,6 +1,6 @@
 {
-  "name": "RideLog - 骑行旅行日志",
-  "short_name": "RideLog",
+  "name": "Donke - 骑行旅行日志",
+  "short_name": "Donke",
   "description": "记录骑行旅程、轨迹与每日点滴的轻量应用",
   "start_url": "./index.html",
   "display": "standalone",
