@@ -844,7 +844,7 @@
       }
 
       const editLink = canEdit
-        ? `<span style="font-size:12px;color:var(--text-secondary);cursor:pointer;" onclick="event.stopPropagation();location.href='daily-segment.html?edit=1&amp;idx=${idx}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">&#9998; 编辑</span>`
+        ? `<span style="font-size:12px;color:var(--text-secondary);cursor:pointer;" onclick="event.stopPropagation();location.href='daily-segment?edit=1&amp;idx=${idx}&amp;day=${seg.day}&amp;journeyId=${journeyId}&amp;journey=${encodeURIComponent(journey.title)}'">&#9998; 编辑</span>`
         : '';
 
       return `

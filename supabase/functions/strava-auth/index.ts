@@ -55,7 +55,7 @@ export default {
       if (stateError || !stateRow) {
         console.error("[strava-auth] invalid or expired state:", stateError);
         return Response.json(
-          { error: "Invalid or expired OAuth state" },
+          { error: "Strava授权已过期，请重新授权" },
           { status: 400 }
         );
       }
@@ -122,11 +122,13 @@ export default {
       // Create a short-lived session token for subsequent Strava API calls.
       // This avoids relying on JWT session persistence across OAuth redirects.
       const sessionToken = crypto.randomUUID();
+      const sessionExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
       const { error: sessionError } = await ctx.supabaseAdmin
         .from("strava_session_tokens")
         .insert({
           token: sessionToken,
           user_id: userId,
+          expires_at: sessionExpiresAt,
         });
 
       if (sessionError) {

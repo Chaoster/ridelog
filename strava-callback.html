@@ -72,13 +72,25 @@
     const state = urlParams.get('state');
 
     function goBack() {
-      location.href = 'daily-segment.html';
+      location.href = 'daily-segment';
     }
 
     function showError(message) {
       document.getElementById('loading-state').style.display = 'none';
       document.getElementById('error-state').style.display = 'block';
-      document.getElementById('error-message').textContent = message;
+      const debug = [];
+      urlParams.forEach((value, key) => debug.push(`${key}=${value}`));
+      document.getElementById('error-message').innerHTML = `
+        <div>${message}</div>
+        <div style="margin-top:12px;font-size:12px;color:#666;word-break:break-all;">
+          URL: ${location.href}<br>
+          Params: ${debug.join('&') || '(none)'}
+        </div>
+      `;
+    }
+
+    function getReturnUrl() {
+      return sessionStorage.getItem('stravaCallbackReturnUrl') || 'daily-segment';
     }
 
     async function handleCallback() {
@@ -103,6 +115,9 @@
         attempts++;
       }
 
+      const returnUrl = getReturnUrl();
+      sessionStorage.removeItem('stravaCallbackReturnUrl');
+
       try {
         const { data, error: fnError } = await supabaseClient.functions.invoke('strava-auth', {
           body: { code, state }
@@ -117,14 +132,23 @@
           sessionStorage.setItem('stravaImportSessionToken', data.session_token);
         }
 
-        // 授权成功，跳转回之前的 daily-segment.html
-        const returnUrl = sessionStorage.getItem('stravaCallbackReturnUrl') || 'daily-segment.html';
-        sessionStorage.removeItem('stravaCallbackReturnUrl');
+        // 授权成功，跳转回之前的 daily-segment
         const separator = returnUrl.includes('?') ? '&' : '?';
-        location.href = returnUrl + separator + 'strava=connected';
+        const targetUrl = returnUrl + separator + 'strava=connected';
+        // Use location.replace so the callback page is not kept in session history.
+        location.replace(targetUrl);
       } catch (err) {
         console.error('[strava-callback] auth error:', err);
-        showError(err.message || '连接 Strava 失败，请重试。');
+        const message = err instanceof Error ? err.message : '连接 Strava 失败，请重试。';
+
+        // If the OAuth state expired (e.g. user navigated back to this page after a successful auth),
+        // just return to the daily-segment page instead of showing an error.
+        if (message.includes('Strava授权已过期，请重新授权')) {
+          location.replace(returnUrl);
+          return;
+        }
+
+        showError(message);
       }
     }
 

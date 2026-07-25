@@ -19,6 +19,28 @@
   </div>
   <style>
     @keyframes loading-spin { to { transform: rotate(360deg); } }
+
+    #strava-modal.modal-overlay.active {
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0;
+    }
+
+    #strava-modal .modal {
+      width: 100%;
+      max-width: 100%;
+      border-radius: 16px 16px 0 0;
+      margin-top: 60px;
+      height: calc(100vh - 60px);
+      padding: 20px 0 0;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #strava-modal .modal-title {
+      text-align: center;
+    }
   </style>
 
   <!-- Page Header -->
@@ -111,16 +133,19 @@
 
   <!-- Strava Activities Modal -->
   <div class="modal-overlay" id="strava-modal">
-    <div class="modal" style="max-height:80vh;display:flex;flex-direction:column;">
-      <div class="modal-title" style="flex-shrink:0;">选择 Strava 活动</div>
+    <div class="modal">
+      <div style="position:relative;flex-shrink:0;padding:0 20px 12px;display:flex;align-items:center;justify-content:center;">
+        <button style="position:absolute;left:20px;background:none;border:none;color:var(--text-secondary);font-size:14px;cursor:pointer;padding:0;" onclick="closeStravaModal()">取消</button>
+        <div class="modal-title" style="margin:0;padding:0;">选择 Strava 活动</div>
+      </div>
       <div id="strava-loading" style="text-align:center;padding:40px 20px;color:var(--text-secondary);font-size:14px;">
         正在加载 Strava 活动...
       </div>
       <div id="strava-error" style="display:none;text-align:center;padding:20px;color:#e74c3c;font-size:14px;"></div>
-      <div id="strava-list" style="overflow-y:auto;flex:1;max-height:50vh;"></div>
-      <div class="action-row" style="margin:0;flex-shrink:0;">
-        <button class="btn btn-secondary" onclick="closeStravaModal()">取消</button>
+      <div id="strava-reauth-wrap" style="display:none;text-align:center;padding:0 20px 20px;flex-shrink:0;">
+        <button id="strava-reauth-btn" class="btn btn-primary" style="width:100%;" onclick="startStravaOAuth()">重新授权 Strava</button>
       </div>
+      <div id="strava-list" style="overflow-y:auto;flex:1;margin:0 20px;"></div>
     </div>
   </div>
 
@@ -172,7 +197,7 @@
 
   <!-- Action Buttons -->
   <div class="action-row" style="margin:24px 20px 0;">
-    <button class="btn btn-secondary" onclick="history.back()">放弃</button>
+    <button class="btn btn-secondary" onclick="location.href = (journeyId || journey?.id) ? `ongoing?id=${journeyId || journey?.id}` : 'my-records'">放弃</button>
     <button class="btn btn-primary" onclick="saveSegment()">保存本日</button>
   </div>
 
@@ -182,7 +207,7 @@
   <script>
     const urlParams = new URLSearchParams(location.search);
     const dayNum = urlParams.get('day') || '1';
-    const journeyId = urlParams.get('journeyId') || '';
+    let journeyId = urlParams.get('journeyId') || '';
     const journeyName = decodeURIComponent(urlParams.get('journey') || '新旅程');
     const isEdit = urlParams.get('edit') === '1';
     const editIdx = parseInt(urlParams.get('idx') || '-1');
@@ -218,6 +243,13 @@
     let existingSeg = null;
 
     // ----- Strava import helpers -----
+
+    const STRAVA_PER_PAGE = 10;
+    const STRAVA_MAX_ACTIVITIES = 30;
+    let stravaCurrentPage = 1;
+    let stravaLoadingMore = false;
+    let stravaHasMore = true;
+    let stravaTotalLoaded = 0;
 
     async function checkStravaAuth() {
       try {
@@ -263,7 +295,7 @@
       // Give localStorage a moment to flush the session tokens (best-effort).
       await new Promise(r => setTimeout(r, 300));
 
-      const redirectUri = `${location.origin}/strava-callback.html`;
+      const redirectUri = `${location.origin}/strava-callback`;
       const scope = 'activity:read_all';
       sessionStorage.setItem('stravaCallbackReturnUrl', location.href);
 
@@ -286,7 +318,7 @@
         return;
       }
       openStravaModal();
-      loadStravaActivities();
+      loadStravaActivities(1);
     }
 
     function openStravaModal() {
@@ -295,6 +327,11 @@
       document.getElementById('strava-error').style.display = 'none';
       document.getElementById('strava-error').textContent = '';
       document.getElementById('strava-list').innerHTML = '';
+      document.getElementById('strava-reauth-wrap').style.display = 'none';
+      stravaCurrentPage = 1;
+      stravaHasMore = true;
+      stravaLoadingMore = false;
+      stravaTotalLoaded = 0;
     }
 
     function closeStravaModal() {
@@ -305,30 +342,168 @@
       return sessionStorage.getItem('stravaImportSessionToken');
     }
 
-    async function loadStravaActivities() {
+    async function loadStravaActivities(page = 1) {
+      if (stravaLoadingMore || stravaTotalLoaded >= STRAVA_MAX_ACTIVITIES) return;
+      stravaLoadingMore = true;
+
       try {
         const sessionToken = getStravaSessionToken();
         if (!sessionToken) {
-          throw new Error('Strava 会话已过期，请重新授权');
+          throw new Error('Strava授权已过期，请重新授权');
         }
 
+        const isFirstPage = page === 1;
+        if (isFirstPage) {
+          document.getElementById('strava-loading').style.display = 'block';
+        } else {
+          showStravaLoadingMore(true);
+        }
+
+        const remaining = STRAVA_MAX_ACTIVITIES - stravaTotalLoaded;
+        const perPage = Math.min(STRAVA_PER_PAGE, remaining);
+
         const { data, error } = await supabaseClient.functions.invoke('strava-activities', {
-          body: { page: 1, per_page: 30, sessionToken }
+          body: { page, per_page: perPage, sessionToken }
         });
 
-        if (error) throw error;
+        if (error) {
+          if (data?.error) throw new Error(data.error);
+          throw error;
+        }
         if (!data || data.error) throw new Error(data?.error || '加载失败');
 
-        renderStravaActivities(data.activities || []);
+        const activities = data.activities || [];
+        stravaTotalLoaded += activities.length;
+        if (isFirstPage) {
+          renderStravaActivities(activities);
+        } else {
+          appendStravaActivities(activities);
+        }
+
+        stravaCurrentPage = page;
+        stravaHasMore = activities.length === perPage && stravaTotalLoaded < STRAVA_MAX_ACTIVITIES;
+
+        if (stravaTotalLoaded >= STRAVA_MAX_ACTIVITIES) {
+          showStravaMaxReached();
+        } else if (!stravaHasMore && stravaTotalLoaded > 0) {
+          showStravaAllLoaded();
+        }
       } catch (err) {
         console.error('[strava] load activities error:', err);
-        document.getElementById('strava-loading').style.display = 'none';
-        document.getElementById('strava-error').style.display = 'block';
-        document.getElementById('strava-error').innerHTML = `
-          <div>加载 Strava 活动失败：${err.message || '未知错误'}</div>
-          <button class="btn btn-primary" style="margin-top:12px;width:100%;" onclick="startStravaOAuth()">重新授权 Strava</button>
-        `;
+        if (page === 1) {
+          document.getElementById('strava-loading').style.display = 'none';
+          document.getElementById('strava-error').style.display = 'block';
+          document.getElementById('strava-error').textContent = err.message || '未知错误';
+          document.getElementById('strava-reauth-wrap').style.display = 'block';
+        }
+      } finally {
+        stravaLoadingMore = false;
+        if (page === 1) {
+          document.getElementById('strava-loading').style.display = 'none';
+        } else {
+          showStravaLoadingMore(false);
+        }
       }
+    }
+
+    document.getElementById('strava-list').addEventListener('scroll', function () {
+      if (stravaLoadingMore || !stravaHasMore) return;
+      const el = this;
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 50) {
+        loadStravaActivities(stravaCurrentPage + 1);
+      }
+    });
+
+    function decodePolyline(encoded) {
+      const points = [];
+      let index = 0, lat = 0, lng = 0;
+      while (index < encoded.length) {
+        let b, shift = 0, result = 0;
+        do {
+          b = encoded.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+        lat += dlat;
+        shift = 0; result = 0;
+        do {
+          b = encoded.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+        lng += dlng;
+        points.push([lat / 1e5, lng / 1e5]);
+      }
+      return points;
+    }
+
+    function renderRouteSnapshotSvg(encodedPolyline, size = 80, strokeColor = '#FF7B3D') {
+      if (!encodedPolyline) return '';
+      const points = decodePolyline(encodedPolyline);
+      if (points.length < 2) return '';
+
+      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+      points.forEach(([lat, lng]) => {
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+      });
+
+      const latRange = maxLat - minLat || 1;
+      const lngRange = maxLng - minLng || 1;
+      const padding = size * 0.1;
+      const drawSize = size - padding * 2;
+
+      // Scale to fit while preserving aspect ratio
+      const scale = Math.min(drawSize / lngRange, drawSize / latRange);
+      const centerX = (minLng + maxLng) / 2;
+      const centerY = (minLat + maxLat) / 2;
+
+      const pathD = points.map(([lat, lng], i) => {
+        const x = size / 2 + (lng - centerX) * scale;
+        const y = size / 2 - (lat - centerY) * scale;
+        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(' ');
+
+      return `
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0;border-radius:8px;background:#f5f5f5;">
+          <path d="${pathD}" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+    }
+
+    function buildStravaActivityItem(a) {
+      const hasRoute = a.has_route !== false;
+      const opacity = hasRoute ? '1' : '0.5';
+      const cursor = hasRoute ? 'pointer' : 'not-allowed';
+      const routeBadge = hasRoute
+        ? ''
+        : `<span style="margin-left:auto;font-size:12px;color:#e74c3c;white-space:nowrap;">无路线数据</span>`;
+      const onClick = hasRoute ? `onclick="selectStravaActivity(${a.id})"` : '';
+      const snapshot = hasRoute ? renderRouteSnapshotSvg(a.summary_polyline) : '';
+
+      return `
+        <div class="strava-activity-item" data-id="${a.id}" style="padding:14px 0;border-bottom:1px solid var(--border);cursor:${cursor};opacity:${opacity};display:flex;gap:12px;align-items:center;"
+          ${onClick}>
+          ${snapshot}
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a.name)}</div>
+              ${routeBadge}
+            </div>
+            <div style="font-size:13px;color:var(--text-secondary);display:flex;gap:12px;flex-wrap:wrap;">
+              <span>${formatStravaDate(a.start_date)}</span>
+              <span>${a.type}</span>
+              <span>${a.distance} km</span>
+              <span>↑ ${a.elevation_gain}m</span>
+              <span>${a.duration}</span>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     function renderStravaActivities(activities) {
@@ -344,18 +519,56 @@
         return;
       }
 
-      listEl.innerHTML = activities.map(a => `
-        <div class="strava-activity-item" data-id="${a.id}" style="padding:14px 0;border-bottom:1px solid var(--border);cursor:pointer;"
-          onclick="selectStravaActivity(${a.id})">
-          <div style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px;">${escapeHtml(a.name)}</div>
-          <div style="font-size:13px;color:var(--text-secondary);display:flex;gap:12px;flex-wrap:wrap;">
-            <span>${formatStravaDate(a.start_date)}</span>
-            <span>${a.distance} km</span>
-            <span>${a.duration}</span>
-            <span>↑ ${a.elevation_gain}m</span>
-          </div>
+      listEl.innerHTML = activities.map(buildStravaActivityItem).join('');
+    }
+
+    function appendStravaActivities(activities) {
+      const listEl = document.getElementById('strava-list');
+      const existing = listEl.querySelector('.strava-loading-more');
+      if (existing) existing.remove();
+
+      if (activities.length === 0) return;
+
+      const html = activities.map(buildStravaActivityItem).join('');
+      listEl.insertAdjacentHTML('beforeend', html);
+    }
+
+    function showStravaLoadingMore(show) {
+      const listEl = document.getElementById('strava-list');
+      const existing = listEl.querySelector('.strava-loading-more');
+      if (existing) existing.remove();
+      if (!show) return;
+      listEl.insertAdjacentHTML('beforeend', `
+        <div class="strava-loading-more" style="text-align:center;padding:16px;color:var(--text-secondary);font-size:13px;">
+          加载更多...
         </div>
-      `).join('');
+      `);
+    }
+
+    function showStravaMaxReached() {
+      const listEl = document.getElementById('strava-list');
+      const existing = listEl.querySelector('.strava-max-reached');
+      if (existing) return;
+      const allLoaded = listEl.querySelector('.strava-all-loaded');
+      if (allLoaded) allLoaded.remove();
+      listEl.insertAdjacentHTML('beforeend', `
+        <div class="strava-max-reached" style="text-align:center;padding:16px;color:var(--text-secondary);font-size:13px;">
+          -至多展示30条活动历史-
+        </div>
+      `);
+    }
+
+    function showStravaAllLoaded() {
+      const listEl = document.getElementById('strava-list');
+      const existing = listEl.querySelector('.strava-all-loaded');
+      if (existing) return;
+      const maxReached = listEl.querySelector('.strava-max-reached');
+      if (maxReached) maxReached.remove();
+      listEl.insertAdjacentHTML('beforeend', `
+        <div class="strava-all-loaded" style="text-align:center;padding:16px;color:var(--text-secondary);font-size:13px;">
+          -已展示全部活动历史-
+        </div>
+      `);
     }
 
     function escapeHtml(str) {
@@ -377,21 +590,28 @@
       try {
         const sessionToken = getStravaSessionToken();
         if (!sessionToken) {
-          throw new Error('Strava 会话已过期，请重新授权');
+          throw new Error('Strava授权已过期，请重新授权');
         }
 
         const { data, error } = await supabaseClient.functions.invoke('strava-activity-streams', {
           body: { activityId, sessionToken }
         });
 
-        if (error) throw error;
+        if (error) {
+          if (data?.error) throw new Error(data.error);
+          throw error;
+        }
         if (!data || data.error) throw new Error(data?.error || '导入失败');
 
         populateRouteFromStrava(data);
       } catch (err) {
         console.error('[strava] import activity error:', err);
         document.getElementById('loading-overlay').style.display = 'none';
-        alert('导入 Strava 路线失败：' + (err.message || '未知错误'));
+        openStravaModal();
+        document.getElementById('strava-loading').style.display = 'none';
+        document.getElementById('strava-error').style.display = 'block';
+        document.getElementById('strava-error').textContent = err.message || '未知错误';
+        document.getElementById('strava-reauth-wrap').style.display = 'block';
       }
     }
 
@@ -470,7 +690,7 @@
         loadJourney();
         setTimeout(() => {
           openStravaModal();
-          loadStravaActivities();
+          loadStravaActivities(1);
         }, 300);
         return;
       }
@@ -479,6 +699,18 @@
     }
 
     async function loadJourney() {
+      if (!journeyId) {
+        try {
+          const ongoing = await window.journeyService.getJourneys({ status: 'ongoing' });
+          if (ongoing && ongoing.length > 0 && ongoing[0].id) {
+            journeyId = ongoing[0].id;
+            history.replaceState(null, '', `${location.pathname}?day=${dayNum}&journeyId=${journeyId}&journey=${encodeURIComponent(ongoing[0].title || '新旅程')}`);
+          }
+        } catch (err) {
+          console.error('[daily-segment] fallback load ongoing journey error:', err);
+        }
+      }
+
       if (!journeyId) {
         alert('缺少 journeyId');
         location.href = 'my-records.html';
@@ -1268,7 +1500,7 @@
       try {
         const updated = await window.journeyService.saveSegment(journeyId, segmentData, isEdit ? editIdx : -1);
         const isCompleted = updated.status === 'completed';
-        location.href = isCompleted ? `journey-detail.html?id=${journeyId}&from=records` : `ongoing.html?id=${journeyId}`;
+        location.href = isCompleted ? `journey-detail?id=${journeyId}&from=records` : `ongoing?id=${journeyId}`;
       } catch (err) {
         console.error('[daily-segment] save segment error:', err);
         alert('保存失败：' + err.message);
@@ -1288,7 +1520,7 @@
 
       try {
         await window.journeyService.deleteSegment(journeyId, editIdx);
-        location.href = `ongoing.html?id=${journeyId}`;
+        location.href = `ongoing?id=${journeyId}`;
       } catch (err) {
         console.error('[daily-segment] delete segment error:', err);
         alert('删除失败：' + err.message);

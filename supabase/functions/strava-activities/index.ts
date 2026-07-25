@@ -30,6 +30,27 @@ interface StravaActivity {
   elapsed_time: number;
   total_elevation_gain: number;
   type: string;
+  workout_type?: number;
+  average_speed?: number;
+  max_speed?: number;
+  average_watts?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  calories?: number;
+  trainer?: boolean;
+  commute?: boolean;
+  manual?: boolean;
+  private?: boolean;
+  gear_id?: string | null;
+  description?: string | null;
+  elev_high?: number;
+  elev_low?: number;
+  start_latlng?: [number, number] | null;
+  end_latlng?: [number, number] | null;
+  map?: {
+    summary_polyline?: string;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -81,7 +102,8 @@ async function refreshStravaToken(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Strava refresh failed: ${res.status} ${text}`);
+    console.error("[strava-activities] Strava refresh failed:", res.status, text);
+    throw new Error("Strava授权已过期，请重新授权");
   }
 
   return res.json();
@@ -100,7 +122,7 @@ async function getValidAccessToken(
     .single();
 
   if (error || !data) {
-    throw new Error("Strava not connected");
+    throw new Error("Strava授权已过期，请重新授权");
   }
 
   const token = data as StravaTokenRow;
@@ -148,7 +170,7 @@ export default {
 
       if (!sessionToken || typeof sessionToken !== "string") {
         return Response.json(
-          { error: "Missing session token" },
+          { error: "Strava授权已过期，请重新授权" },
           { status: 400 }
         );
       }
@@ -156,7 +178,7 @@ export default {
       const userId = await resolveUserFromSessionToken(ctx.supabaseAdmin, sessionToken);
       if (!userId) {
         return Response.json(
-          { error: "Invalid or expired session token" },
+          { error: "Strava授权已过期，请重新授权" },
           { status: 401 }
         );
       }
@@ -194,23 +216,55 @@ export default {
       if (!activitiesRes.ok) {
         const text = await activitiesRes.text();
         console.error("[strava-activities] Strava API error:", activitiesRes.status, text);
+
+        let detail = text || String(activitiesRes.status);
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed.message === "Forbidden" && parsed.errors?.some((e: any) => e.code === "Inactive")) {
+            detail = "Strava授权已过期，请重新授权";
+          }
+        } catch {
+          // ignore parse error
+        }
+
         return Response.json(
-          { error: `Failed to fetch Strava activities: ${text || activitiesRes.status}` },
+          { error: `Failed to fetch Strava activities: ${detail}` },
           { status: 400 }
         );
       }
 
       const activities: StravaActivity[] = await activitiesRes.json();
 
-      const formatted = activities.map((a) => ({
-        id: a.id,
-        name: a.name,
-        start_date: a.start_date,
-        distance: Math.round((a.distance / 1000) * 10) / 10, // meters to km
-        duration: formatDuration(a.moving_time),
-        elevation_gain: Math.round(a.total_elevation_gain),
-        type: a.type,
-      }));
+      const formatted = activities.map((a) => {
+        const avgSpeedKmh = a.average_speed ? Math.round((a.average_speed * 3.6) * 10) / 10 : 0;
+        const maxSpeedKmh = a.max_speed ? Math.round((a.max_speed * 3.6) * 10) / 10 : 0;
+        return {
+          id: a.id,
+          name: a.name,
+          start_date: a.start_date,
+          distance: Math.round((a.distance / 1000) * 10) / 10, // meters to km
+          duration: formatDuration(a.moving_time),
+          elevation_gain: Math.round(a.total_elevation_gain),
+          type: a.type,
+          has_route: !!(a.map?.summary_polyline && a.map.summary_polyline.length > 0),
+          summary_polyline: a.map?.summary_polyline || '',
+          avg_speed: avgSpeedKmh,
+          max_speed: maxSpeedKmh,
+          avg_watts: a.average_watts ? Math.round(a.average_watts) : null,
+          avg_hr: a.average_heartrate ? Math.round(a.average_heartrate) : null,
+          max_hr: a.max_heartrate ? Math.round(a.max_heartrate) : null,
+          calories: a.calories ? Math.round(a.calories) : null,
+          trainer: !!a.trainer,
+          commute: !!a.commute,
+          manual: !!a.manual,
+          private: !!a.private,
+          workout_type: a.workout_type ?? 0,
+          gear_id: a.gear_id || null,
+          description: a.description || '',
+          elev_high: a.elev_high ? Math.round(a.elev_high) : null,
+          elev_low: a.elev_low ? Math.round(a.elev_low) : null,
+        };
+      });
 
       return Response.json({ activities: formatted });
     } catch (err) {

@@ -199,10 +199,10 @@
           </div>
         `;
       } else {
-        ongoingEl.innerHTML = ongoing.map(j => {
+        ongoingEl.innerHTML = ongoing.filter(j => j.id).map(j => {
           const segCount = (j.segments || []).length;
           return `
-            <div class="card" onclick="location.href='ongoing.html?id=${j.id}'">
+            <div class="card" onclick="location.href='ongoing?id=${j.id}'">
               <div class="card-content">
                 <div style="display:flex;align-items:center;justify-content:space-between;">
                   <div class="card-title">${j.title}</div>
@@ -259,7 +259,7 @@
           }
 
           return `
-          <div class="card" onclick="location.href='journey-detail.html?id=${j.id}&from=records'" style="margin:12px 20px;">
+          <div class="card" onclick="location.href='journey-detail?id=${j.id}&from=records'" style="margin:12px 20px;">
             <div class="card-content" style="padding:12px;">
               <div style="display:flex;gap:12px;">
                 ${coverHtml}
