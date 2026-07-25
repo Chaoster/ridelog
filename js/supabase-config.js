@@ -11,7 +11,9 @@ const SUPABASE_ANON_KEY = isLocalhost
   ? 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH'
   : 'sb_publishable_Q1Rhs4-SPbDZZMtjtvTT5A_YF2OubHp';
 
-const STRAVA_CLIENT_ID = '267602';
+const STRAVA_CLIENT_ID = isLocalhost
+  ? '267602'   // 本地测试 Strava App
+  : '252161';  // 线上生产 Strava App
 
 console.log('[Supabase] 当前连接:', isLocalhost ? '本地环境' : '线上环境', SUPABASE_URL);
 
