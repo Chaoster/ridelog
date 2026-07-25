@@ -234,6 +234,9 @@
     }
 
     async function startStravaOAuth() {
+      // Clear any stale session token before starting a new OAuth flow.
+      sessionStorage.removeItem('stravaImportSessionToken');
+
       // Ensure session is persisted to storage before leaving for external OAuth.
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session?.user) {
@@ -321,7 +324,10 @@
         console.error('[strava] load activities error:', err);
         document.getElementById('strava-loading').style.display = 'none';
         document.getElementById('strava-error').style.display = 'block';
-        document.getElementById('strava-error').textContent = '加载 Strava 活动失败：' + (err.message || '未知错误');
+        document.getElementById('strava-error').innerHTML = `
+          <div>加载 Strava 活动失败：${err.message || '未知错误'}</div>
+          <button class="btn btn-primary" style="margin-top:12px;width:100%;" onclick="startStravaOAuth()">重新授权 Strava</button>
+        `;
       }
     }
 
