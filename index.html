@@ -8,17 +8,8 @@
   <link rel="icon" type="image/png" href="images/favicon.png">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="images/icon.png">
-  <link rel="apple-touch-startup-image" href="images/splash/splash-750x1334.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)">
-  <link rel="apple-touch-startup-image" href="images/splash/splash-1242x2208.png" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3)">
-  <link rel="apple-touch-startup-image" href="images/splash/splash-1125x2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)">
-  <link rel="apple-touch-startup-image" href="images/splash/splash-1242x2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)">
-  <link rel="apple-touch-startup-image" href="images/splash/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
-  <link rel="apple-touch-startup-image" href="images/splash/splash-1284x2778.png" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)">
-  <link rel="apple-touch-startup-image" href="images/splash/splash-1179x2556.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)">
-  <link rel="apple-touch-startup-image" href="images/splash/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)">
   <meta name="theme-color" content="#FF7B3D">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Donke">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -26,67 +17,12 @@
   <script src="js/supabase-config.js"></script>
   <script src="js/login-modal.js"></script>
   <script>
-    (function () {
-      const isStandalone = window.navigator.standalone === true ||
-        window.matchMedia('(display-mode: standalone)').matches;
-      const alreadyShown = window.sessionStorage.getItem('pwaSplashShown') === 'true';
-      if (isStandalone && !alreadyShown) {
-        document.documentElement.classList.add('show-pwa-splash');
-      }
-    })();
-  </script>
-  <style>
-    #pwa-splash {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 9999999;
-      background: var(--primary, #FF7B3D);
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-    }
-    .show-pwa-splash #pwa-splash { display: flex; }
-    .pwa-splash-icon {
-      width: 300px;
-      height: 300px;
-      object-fit: contain;
-    }
-    .pwa-splash-hide {
-      opacity: 0;
-      transition: opacity 0.4s ease-out;
-      pointer-events: none;
-    }
-  </style>
-  <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js');
     }
   </script>
 </head>
 <body>
-  <!-- PWA Splash Screen -->
-  <div id="pwa-splash">
-    <img src="images/splash-logo.png" alt="Donke" class="pwa-splash-icon">
-  </div>
-
-  <script>
-    (function () {
-      const splash = document.getElementById('pwa-splash');
-      if (!splash || splash.style.display === 'none') return;
-      if (!document.documentElement.classList.contains('show-pwa-splash')) return;
-
-      window.sessionStorage.setItem('pwaSplashShown', 'true');
-      window.addEventListener('load', function () {
-        setTimeout(function () {
-          splash.classList.add('pwa-splash-hide');
-          splash.addEventListener('transitionend', function () {
-            splash.style.display = 'none';
-          });
-        }, 1500);
-      });
-    })();
-  </script>
   <!-- Header -->
   <div class="header">
     <a href="index.html" class="logo-link" aria-label="回到首页">
