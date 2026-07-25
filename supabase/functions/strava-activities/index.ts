@@ -170,16 +170,14 @@ export default {
 
       if (!sessionToken || typeof sessionToken !== "string") {
         return Response.json(
-          { error: "Strava授权已过期，请重新授权" },
-          { status: 400 }
+          { error: "Strava授权已过期，请重新授权" }
         );
       }
 
       const userId = await resolveUserFromSessionToken(ctx.supabaseAdmin, sessionToken);
       if (!userId) {
         return Response.json(
-          { error: "Strava授权已过期，请重新授权" },
-          { status: 401 }
+          { error: "Strava授权已过期，请重新授权" }
         );
       }
 
@@ -189,8 +187,7 @@ export default {
       if (!clientId || !clientSecret) {
         console.error("[strava-activities] Missing Strava credentials");
         return Response.json(
-          { error: "Strava credentials not configured" },
-          { status: 500 }
+          { error: "Strava credentials not configured" }
         );
       }
 
@@ -228,8 +225,7 @@ export default {
         }
 
         return Response.json(
-          { error: `Failed to fetch Strava activities: ${detail}` },
-          { status: 400 }
+          { error: `Failed to fetch Strava activities: ${detail}` }
         );
       }
 
@@ -270,6 +266,10 @@ export default {
     } catch (err) {
       console.error("[strava-activities] Unexpected error:", err);
       const message = err instanceof Error ? err.message : "Internal server error";
+      // Return 200 for known business errors so the client can read data.error
+      if (message === "Strava授权已过期，请重新授权") {
+        return Response.json({ error: message });
+      }
       return Response.json({ error: message }, { status: 500 });
     }
   }),

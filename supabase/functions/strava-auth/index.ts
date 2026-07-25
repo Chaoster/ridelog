@@ -21,14 +21,12 @@ export default {
 
       if (!code || typeof code !== "string") {
         return Response.json(
-          { error: "Missing authorization code" },
-          { status: 400 }
+          { error: "Missing authorization code" }
         );
       }
       if (!state || typeof state !== "string") {
         return Response.json(
-          { error: "Missing OAuth state" },
-          { status: 400 }
+          { error: "Missing OAuth state" }
         );
       }
 
@@ -38,8 +36,7 @@ export default {
       if (!clientId || !clientSecret) {
         console.error("[strava-auth] Missing STRAVA_CLIENT_ID or STRAVA_CLIENT_SECRET");
         return Response.json(
-          { error: "Strava credentials not configured" },
-          { status: 500 }
+          { error: "Strava credentials not configured" }
         );
       }
 
@@ -55,8 +52,7 @@ export default {
       if (stateError || !stateRow) {
         console.error("[strava-auth] invalid or expired state:", stateError);
         return Response.json(
-          { error: "Strava授权已过期，请重新授权" },
-          { status: 400 }
+          { error: "Strava授权已过期，请重新授权" }
         );
       }
 
@@ -84,8 +80,7 @@ export default {
         const errorText = await tokenRes.text();
         console.error("[strava-auth] Strava token exchange failed:", tokenRes.status, errorText);
         return Response.json(
-          { error: "Failed to exchange Strava authorization code" },
-          { status: 400 }
+          { error: "Failed to exchange Strava authorization code" }
         );
       }
 
@@ -114,8 +109,7 @@ export default {
       if (error) {
         console.error("[strava-auth] Failed to save token:", error);
         return Response.json(
-          { error: "Failed to save Strava token" },
-          { status: 500 }
+          { error: "Failed to save Strava token" }
         );
       }
 
@@ -143,10 +137,7 @@ export default {
       });
     } catch (err) {
       console.error("[strava-auth] Unexpected error:", err);
-      return Response.json(
-        { error: "Internal server error" },
-        { status: 500 }
-      );
+      return Response.json({ error: "Internal server error" }, { status: 500 });
     }
   }),
 };

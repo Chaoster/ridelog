@@ -245,16 +245,14 @@ export default {
 
       if (!sessionToken || typeof sessionToken !== "string") {
         return Response.json(
-          { error: "Strava授权已过期，请重新授权" },
-          { status: 400 }
+          { error: "Strava授权已过期，请重新授权" }
         );
       }
 
       const userId = await resolveUserFromSessionToken(ctx.supabaseAdmin, sessionToken);
       if (!userId) {
         return Response.json(
-          { error: "Strava授权已过期，请重新授权" },
-          { status: 401 }
+          { error: "Strava授权已过期，请重新授权" }
         );
       }
 
@@ -264,15 +262,13 @@ export default {
       if (!clientId || !clientSecret) {
         console.error("[strava-activity-streams] Missing Strava credentials");
         return Response.json(
-          { error: "Strava credentials not configured" },
-          { status: 500 }
+          { error: "Strava credentials not configured" }
         );
       }
 
       if (!activityId || typeof activityId !== "number") {
         return Response.json(
-          { error: "Missing or invalid activityId" },
-          { status: 400 }
+          { error: "Missing or invalid activityId" }
         );
       }
 
@@ -296,8 +292,7 @@ export default {
         const text = await streamsRes.text();
         console.error("[strava-activity-streams] Strava API error:", streamsRes.status, text);
         return Response.json(
-          { error: "Failed to fetch activity streams" },
-          { status: 400 }
+          { error: "Failed to fetch activity streams" }
         );
       }
 
@@ -357,8 +352,7 @@ export default {
 
       if (!effectiveLatLng || effectiveLatLng.length === 0) {
         return Response.json(
-          { error: "该活动没有路线数据，请选择包含 GPS 记录的骑行活动" },
-          { status: 400 }
+          { error: "该活动没有路线数据，请选择包含 GPS 记录的骑行活动" }
         );
       }
 
@@ -403,6 +397,10 @@ export default {
     } catch (err) {
       console.error("[strava-activity-streams] Unexpected error:", err);
       const message = err instanceof Error ? err.message : "Internal server error";
+      // Return 200 for known business errors so the client can read data.error
+      if (message === "Strava授权已过期，请重新授权") {
+        return Response.json({ error: message });
+      }
       return Response.json({ error: message }, { status: 500 });
     }
   }),
