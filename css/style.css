@@ -323,6 +323,7 @@ body.page-no-nav {
 input[type="date"] {
   max-width: 100%;
   min-width: 0;
+  color: #1a1a2e;
   -webkit-appearance: none;
   appearance: none;
 }
