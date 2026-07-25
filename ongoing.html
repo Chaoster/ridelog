@@ -6,9 +6,19 @@
   <title>旅程进行中 - RideLog</title>
   <link rel="stylesheet" href="css/style.css?v=8">
   <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="images/icon.png">
+  <meta name="theme-color" content="#FF7B3D">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <script src="js/supabase.js"></script>
   <script src="js/supabase-config.js"></script>
   <script src="js/login-modal.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js');
+    }
+  </script>
 </head>
 <body class="page-no-nav">
   <!-- Loading Overlay -->

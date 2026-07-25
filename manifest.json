@@ -1,0 +1,32 @@
+{
+  "name": "RideLog - 骑行旅行日志",
+  "short_name": "RideLog",
+  "description": "记录骑行旅程、轨迹与每日点滴的轻量应用",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#FF7B3D",
+  "orientation": "portrait",
+  "scope": ".",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "images/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "images/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "images/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
