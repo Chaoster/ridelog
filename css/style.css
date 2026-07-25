@@ -324,8 +324,18 @@ input[type="date"] {
   max-width: 100%;
   min-width: 0;
   color: #1a1a2e;
+  background-color: var(--surface);
+  text-align: left;
+  line-height: 1.4;
+  min-height: 48px;
   -webkit-appearance: none;
   appearance: none;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  color: #1a1a2e;
+  opacity: 0.5;
+  cursor: pointer;
 }
 
 .form-textarea {
