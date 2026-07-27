@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ridelog-pwa-v35';
+const CACHE_NAME = 'ridelog-pwa-v36';
 
 const PRECACHE_ASSETS = [
   '/index.html',
@@ -74,6 +74,10 @@ function normalizeCacheKey(request) {
   }
 }
 
+function isCacheable(response) {
+  return response && response.status === 200 && response.type === 'basic' && !response.redirected;
+}
+
 function createOfflineResponse() {
   return new Response('离线状态，无法加载该资源', {
     status: 503,
@@ -90,7 +94,7 @@ async function cacheFirst(request) {
 
   try {
     const response = await fetch(request);
-    if (response && response.ok) {
+    if (isCacheable(response)) {
       cache.put(cacheKey, response.clone());
     }
     return response || createOfflineResponse();
@@ -106,7 +110,7 @@ async function networkFirstWithCacheFallback(request) {
 
   try {
     const networkResponse = await fetch(request);
-    if (networkResponse && (networkResponse.ok || networkResponse.status === 308)) {
+    if (isCacheable(networkResponse)) {
       cache.put(cacheKey, networkResponse.clone());
     }
     return networkResponse || await cache.match(cacheKey) || createOfflineResponse();
@@ -123,7 +127,7 @@ async function staleWhileRevalidate(request) {
 
   try {
     const networkResponse = await fetch(request);
-    if (networkResponse && networkResponse.ok) {
+    if (isCacheable(networkResponse)) {
       cache.put(request, networkResponse.clone());
     }
     return networkResponse || cached || createOfflineResponse();
@@ -142,11 +146,28 @@ async function networkOnly(request) {
   }
 }
 
+async function precacheAssets(cache) {
+  await Promise.all(
+    PRECACHE_ASSETS.map(async url => {
+      try {
+        const response = await fetch(url, { redirect: 'follow' });
+        if (isCacheable(response)) {
+          await cache.put(url, response);
+        } else {
+          console.warn('[SW] skipping precache:', url, response.status, response.type);
+        }
+      } catch (err) {
+        console.error('[SW] failed to precache:', url, err);
+      }
+    })
+  );
+}
+
 self.addEventListener('install', event => {
   console.log('[SW] installing');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(PRECACHE_ASSETS))
+      .then(cache => precacheAssets(cache))
       .then(() => self.skipWaiting())
       .catch(err => {
         console.error('[SW] install failed:', err);
