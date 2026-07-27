@@ -218,6 +218,12 @@
       const value = nicknameInput.value.trim();
       if (!value) return;
 
+      const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+      if (userError || !userData.user) {
+        alert('未登录，无法保存');
+        return;
+      }
+
       const { error } = await supabaseClient.auth.updateUser({
         data: { nickname: value }
       });
@@ -226,6 +232,12 @@
         alert('保存失败：' + error.message);
         return;
       }
+
+      await supabaseClient.from('profiles').upsert({
+        id: userData.user.id,
+        nickname: value,
+        avatar_url: userData.user.user_metadata?.avatar || null
+      }, { onConflict: 'id' });
 
       nicknameEl.textContent = value;
       closeEditModal();
@@ -308,6 +320,12 @@
         });
 
         if (updateError) throw updateError;
+
+        await supabaseClient.from('profiles').upsert({
+          id: user.id,
+          nickname: user.user_metadata?.nickname || nicknameEl.textContent || '一只小毛驴',
+          avatar_url: publicUrl
+        }, { onConflict: 'id' });
 
         showAvatar(publicUrl);
         closeAvatarModal();

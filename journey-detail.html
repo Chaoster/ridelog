@@ -77,26 +77,26 @@
   </div>
 
   <!-- Stats Bar -->
-  <div class="stats-bar" style="margin-top:12px;">
-    <div class="stat-item">
-      <div class="stat-value" id="stat-days">-</div>
-      <div class="stat-label">天</div>
+  <div class="stats-bar journey-stats-bar" style="margin:0;border-radius:0;">
+    <div class="stats-row">
+      <div class="stat-item">
+        <div class="stat-value" id="stat-days">-</div>
+        <div class="stat-label">天</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value" id="stat-distance">-</div>
+        <div class="stat-label">总里程(km)</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value" id="stat-elev">-</div>
+        <div class="stat-label">总爬升(m)</div>
+      </div>
     </div>
-    <div class="stat-item">
-      <div class="stat-value" id="stat-distance">-</div>
-      <div class="stat-label">总里程(km)</div>
+    <div id="gpx-download-wrap" style="display:none;width:100%;">
+      <button class="btn btn-primary" style="width:100%;" onclick="downloadCombinedGPX()">
+        下载完整 GPX 路线
+      </button>
     </div>
-    <div class="stat-item">
-      <div class="stat-value" id="stat-elev">-</div>
-      <div class="stat-label">总爬升(m)</div>
-    </div>
-  </div>
-
-  <!-- Download GPX -->
-  <div style="margin:16px 20px;display:none;" id="gpx-download-wrap">
-    <button class="btn btn-primary" style="width:100%;" onclick="downloadCombinedGPX()">
-      下载完整 GPX 路线
-    </button>
   </div>
 
   <!-- Interactive Map -->
@@ -125,17 +125,36 @@
     <div class="journey-content" id="journey-story"></div>
   </div>
 
-  <!-- Route Info -->
-  <div class="section" style="margin-bottom:32px;">
-    <div class="section-title">行程概览</div>
-    <div style="margin:0 20px;background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);">
-      <div id="route-summary" style="font-size:14px;color:var(--text-secondary);line-height:1.8;"></div>
+  <!-- Journey Reviews -->
+  <div class="section" id="reviews-section" style="margin-bottom:32px;">
+    <div class="section-title">评论</div>
+    <div class="reviews-card">
+      <div id="reviews-form" class="reviews-form" style="display:none;">
+        <div class="reviews-input-row">
+          <div class="reviews-current-avatar" id="reviews-current-avatar">
+            <img id="reviews-current-avatar-img" class="hidden" alt="">
+            <div id="reviews-current-avatar-placeholder">骑</div>
+          </div>
+          <div class="reviews-input-wrap">
+            <input type="text" id="review-input" class="form-input" placeholder="写下你的评论" maxlength="100">
+            <button id="review-submit-inline" class="reviews-submit-inline" type="button" onclick="submitReview()">发布</button>
+            <div id="review-char-count" class="reviews-char-count">0/100</div>
+          </div>
+        </div>
+      </div>
+      <div id="reviews-list" class="reviews-list"></div>
+      <div id="reviews-login-prompt" class="reviews-login-prompt" style="display:none;">
+        <div class="reviews-login-text"><span class="reviews-login-link" onclick="window.requireAuth && window.requireAuth(() => location.reload())">登录</span>后查看更多评论</div>
+      </div>
+      <div id="reviews-load-sentinel" class="reviews-sentinel"></div>
+      <div id="reviews-loading" class="reviews-loading" style="display:none;">加载中...</div>
+      <div id="reviews-empty" class="reviews-empty" style="display:none;">暂无评论，快来发表第一条评论吧</div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/app.js?v=14"></script>
-  <script src="js/journey-service.js?v=13"></script>
+  <script src="js/journey-service.js?v=14"></script>
   <script>
     const urlParams = new URLSearchParams(location.search);
     const journeyId = urlParams.get('id') || '1';
@@ -439,7 +458,7 @@
       document.getElementById('detail-date').textContent = journey.completedAt || journey.createdAt;
     } else if (journey.author) {
       document.getElementById('detail-author').textContent = '作者：' + journey.author;
-      document.getElementById('detail-date').textContent = journey.date;
+      document.getElementById('detail-date').textContent = journey.completedAt || journey.createdAt;
     } else {
       document.getElementById('detail-author').textContent = '作者：骑行者';
       document.getElementById('detail-date').textContent = journey.completedAt || journey.createdAt;
@@ -961,13 +980,6 @@
       if (segs.length > INITIAL_DAYS_SHOWN) {
         storyEl.appendChild(renderLoadMoreButton(segs.length - INITIAL_DAYS_SHOWN));
       }
-
-      document.getElementById('route-summary').innerHTML = `
-        本次旅程 <strong>${journey.title}</strong>，
-        共 ${totalDays} 天，
-        总里程 ${totalDist > 0 ? totalDist.toFixed(1) : '-'} km，
-        总爬升 ${totalElev > 0 ? Math.round(totalElev) : '-'} m。
-      `;
     } else if (journey.segments && journey.segments.length > 0) {
       const sampleTotal = journey.segments.length;
       storyEl.innerHTML = journey.segments.slice(0, INITIAL_DAYS_SHOWN).map((seg, idx) => renderSampleDaySection(seg, idx, sampleTotal, journey.photos)).join('');
@@ -975,21 +987,11 @@
       if (journey.segments.length > INITIAL_DAYS_SHOWN) {
         storyEl.appendChild(renderLoadMoreButton(journey.segments.length - INITIAL_DAYS_SHOWN));
       }
-
-      document.getElementById('route-summary').innerHTML = `
-        从 <strong>${journey.start}</strong> 出发，
-        经 ${journey.days} 天骑行，
-        总里程 ${journey.distance} km，
-        最终抵达 <strong>${journey.end}</strong>。
-      `;
     } else {
       storyEl.innerHTML = `
         <div style="text-align:center;padding:40px 20px;color:var(--text-secondary);font-size:14px;">
           暂无详细日志
         </div>
-      `;
-      document.getElementById('route-summary').innerHTML = `
-        本次旅程 <strong>${journey.title}</strong>。
       `;
     }
 
@@ -999,6 +1001,229 @@
       document.getElementById('elevation-section').style.display = 'block';
       drawElevationChart(points, dists);
     }
+
+    // ----- Journey reviews -----
+    const REVIEWS_PAGE_SIZE = 5;
+    const REVIEWS_INITIAL_LIMIT = 3;
+    let reviewsOffset = 0;
+    let reviewsLoading = false;
+    let reviewsHasMore = true;
+    let reviewsLoaded = false;
+    let reviewsSectionEntered = false;
+
+    const reviewsListEl = document.getElementById('reviews-list');
+    const reviewsLoadingEl = document.getElementById('reviews-loading');
+    const reviewsEmptyEl = document.getElementById('reviews-empty');
+    const reviewsFormEl = document.getElementById('reviews-form');
+    const reviewsLoginPromptEl = document.getElementById('reviews-login-prompt');
+    const reviewInputEl = document.getElementById('review-input');
+    const reviewCharCountEl = document.getElementById('review-char-count');
+    const reviewSubmitBtn = document.getElementById('review-submit-inline');
+    const reviewsCurrentAvatarImg = document.getElementById('reviews-current-avatar-img');
+    const reviewsCurrentAvatarPlaceholder = document.getElementById('reviews-current-avatar-placeholder');
+
+    function formatReviewTime(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      const now = new Date();
+      const diffMs = now - d;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+      if (diffMins < 1) return '刚刚';
+      if (diffMins < 60) return `${diffMins}分钟前`;
+      if (diffHours < 24) return `${diffHours}小时前`;
+      if (diffDays < 30) return `${diffDays}天前`;
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function renderReviewAvatar(review) {
+      if (review.avatarUrl) {
+        return `<img src="${review.avatarUrl}" alt="">`;
+      }
+      const name = review.nickname || '骑';
+      return `<div class="reviews-avatar-placeholder">${name.slice(0, 1)}</div>`;
+    }
+
+    function renderReviewItem(review) {
+      const isOwn = loggedIn && currentUser && review.userId === currentUser.id;
+      const isOwner = loggedIn && currentUser && journey && journey.userId === currentUser.id;
+      const canDelete = isOwn || isOwner;
+      return `
+        <div class="review-item" data-review-id="${review.id}">
+          <div class="review-avatar">${renderReviewAvatar(review)}</div>
+          <div class="review-body">
+            <div class="review-header">
+              <span class="review-nickname">${review.nickname}</span>
+              <span class="review-time">${formatReviewTime(review.createdAt)}</span>
+            </div>
+            <div class="review-content">${review.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          </div>
+          ${canDelete ? `<button class="review-delete" onclick="deleteReview('${review.id}')" title="删除">×</button>` : ''}
+        </div>
+      `;
+    }
+
+    async function loadReviews({ append = false, limit = REVIEWS_PAGE_SIZE } = {}) {
+      if (reviewsLoading || !reviewsHasMore) return;
+      reviewsLoading = true;
+      reviewsLoadingEl.style.display = 'block';
+
+      try {
+        const pageLimit = !reviewsLoaded ? REVIEWS_INITIAL_LIMIT : limit;
+        const reviews = await window.journeyService.listJourneyReviews(journeyId, {
+          limit: pageLimit,
+          offset: reviewsOffset
+        });
+
+        if (!reviewsLoaded && reviews.length === 0) {
+          reviewsEmptyEl.style.display = 'block';
+        } else {
+          reviewsEmptyEl.style.display = 'none';
+        }
+
+        if (!append) {
+          reviewsListEl.innerHTML = reviews.map(renderReviewItem).join('');
+        } else {
+          reviewsListEl.insertAdjacentHTML('beforeend', reviews.map(renderReviewItem).join(''));
+        }
+
+        reviewsLoaded = true;
+        reviewsOffset += reviews.length;
+        if (reviews.length < pageLimit) {
+          reviewsHasMore = false;
+          reviewsLoadingEl.style.display = 'none';
+        }
+      } catch (err) {
+        console.error('[journey-detail] load reviews error:', err);
+      } finally {
+        reviewsLoading = false;
+        if (!reviewsHasMore) {
+          reviewsLoadingEl.style.display = 'none';
+        }
+      }
+    }
+
+    function syncCurrentReviewAvatar() {
+      if (!loggedIn || !currentUser) return;
+      const meta = currentUser.user_metadata || {};
+      const avatarUrl = meta.avatar;
+      const nickname = meta.nickname || '骑行者';
+      if (avatarUrl && reviewsCurrentAvatarImg) {
+        reviewsCurrentAvatarImg.src = avatarUrl;
+        reviewsCurrentAvatarImg.classList.remove('hidden');
+        if (reviewsCurrentAvatarPlaceholder) reviewsCurrentAvatarPlaceholder.classList.add('hidden');
+      } else if (reviewsCurrentAvatarPlaceholder) {
+        reviewsCurrentAvatarPlaceholder.textContent = nickname.slice(0, 1);
+        reviewsCurrentAvatarPlaceholder.classList.remove('hidden');
+        if (reviewsCurrentAvatarImg) reviewsCurrentAvatarImg.classList.add('hidden');
+      }
+    }
+
+    function initReviews() {
+      if (loggedIn) {
+        reviewsFormEl.style.display = 'block';
+        reviewsLoginPromptEl.style.display = 'none';
+        syncCurrentReviewAvatar();
+      } else {
+        reviewsFormEl.style.display = 'none';
+        reviewsLoginPromptEl.style.display = 'none';
+      }
+
+      // Lazy load: first 3 comments when reviews section scrolls into view
+      const reviewsSection = document.getElementById('reviews-section');
+      if (reviewsSection && 'IntersectionObserver' in window) {
+        const sectionObserver = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting && !reviewsSectionEntered) {
+              reviewsSectionEntered = true;
+              loadReviews({ append: false }).then(() => {
+                if (!loggedIn) {
+                  reviewsLoadingEl.style.display = 'none';
+                  reviewsLoginPromptEl.style.display = 'block';
+                }
+              });
+            }
+          });
+        }, { rootMargin: '100px', threshold: 0 });
+        sectionObserver.observe(reviewsSection);
+      }
+
+      // Scroll-to-load more for logged-in users
+      if (loggedIn) {
+        const sentinel = document.getElementById('reviews-load-sentinel');
+        if (sentinel && 'IntersectionObserver' in window) {
+          const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+              if (entry.isIntersecting && reviewsSectionEntered) {
+                loadReviews({ append: true });
+              }
+            });
+          }, { rootMargin: '100px' });
+          observer.observe(sentinel);
+        }
+      }
+
+      if (reviewInputEl) {
+        reviewInputEl.addEventListener('input', () => {
+          const len = reviewInputEl.value.length;
+          reviewCharCountEl.textContent = `${len}/100`;
+          reviewCharCountEl.classList.toggle('reviews-char-count-warning', len >= 100);
+        });
+      }
+    }
+
+    window.submitReview = async function () {
+      if (!loggedIn) {
+        window.requireAuth && window.requireAuth(() => submitReview());
+        return;
+      }
+      const content = reviewInputEl.value.trim();
+      if (!content) {
+        alert('评论内容不能为空');
+        return;
+      }
+      if (content.length > 100) {
+        alert('评论最多 100 字');
+        return;
+      }
+
+      reviewSubmitBtn.disabled = true;
+      reviewSubmitBtn.textContent = '发布中...';
+      try {
+        const review = await window.journeyService.addJourneyReview(journeyId, content);
+        reviewInputEl.value = '';
+        reviewCharCountEl.textContent = '0/100';
+        reviewsEmptyEl.style.display = 'none';
+        reviewsListEl.insertAdjacentHTML('afterbegin', renderReviewItem(review));
+        reviewsOffset += 1;
+      } catch (err) {
+        console.error('[journey-detail] submit review error:', err);
+        alert('评论失败：' + err.message);
+      } finally {
+        reviewSubmitBtn.disabled = false;
+        reviewSubmitBtn.textContent = '发布';
+      }
+    };
+
+    window.deleteReview = async function (reviewId) {
+      if (!loggedIn) return;
+      if (!confirm('确定要删除这条评论吗？')) return;
+      try {
+        await window.journeyService.deleteJourneyReview(reviewId);
+        const item = reviewsListEl.querySelector(`[data-review-id="${reviewId}"]`);
+        if (item) item.remove();
+        reviewsOffset = Math.max(0, reviewsOffset - 1);
+        if (reviewsListEl.children.length === 0) {
+          reviewsEmptyEl.style.display = 'block';
+        }
+      } catch (err) {
+        console.error('[journey-detail] delete review error:', err);
+        alert('删除失败：' + err.message);
+      }
+    };
+
+    initReviews();
   })();
   </script>
 </body>

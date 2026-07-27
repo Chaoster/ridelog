@@ -111,6 +111,22 @@
       }
     }
 
+    async function upsertProfileFromMetadata() {
+      const { data, error } = await supabaseClient.auth.getUser();
+      if (error || !data.user) return;
+      const meta = data.user.user_metadata || {};
+      const { error: upsertError } = await supabaseClient
+        .from('profiles')
+        .upsert({
+          id: data.user.id,
+          nickname: meta.nickname || '一只小毛驴',
+          avatar_url: meta.avatar || null
+        }, { onConflict: 'id' });
+      if (upsertError) {
+        console.error('[login-modal] upsert profile error:', upsertError);
+      }
+    }
+
     async function handleSubmit() {
       const email = emailInput.value.trim();
       const code = codeInput.value.trim();
@@ -143,6 +159,8 @@
           });
           if (signUpError) throw signUpError;
         }
+
+        await upsertProfileFromMetadata();
 
         if (window.journeyService) {
           await window.journeyService.migrateLocalStorage();
@@ -204,12 +222,18 @@
         window.currentUser = session?.user || null;
         syncHeaderAvatar(window.currentUser);
         document.body.dispatchEvent(new CustomEvent('authStateChanged', { detail: window.currentUser }));
+        if (window.currentUser) {
+          upsertProfileFromMetadata();
+        }
       });
 
       window.supabaseClient.auth.getUser().then(({ data }) => {
         window.currentUser = data.user || null;
         syncHeaderAvatar(window.currentUser);
         document.body.dispatchEvent(new CustomEvent('authStateChanged', { detail: window.currentUser }));
+        if (window.currentUser) {
+          upsertProfileFromMetadata();
+        }
       });
     }
 

@@ -74,7 +74,7 @@
   }
 
   // Build the frontend journey object from DB rows
-  function buildJourney(journeyRow, segmentRows, photoRows, gpxRows, editIdx = -1, photoLimit = null) {
+  function buildJourney(journeyRow, segmentRows, photoRows, gpxRows, editIdx = -1, photoLimit = null, authorInfo = null) {
     const photosBySegment = {};
     photoRows.forEach(p => {
       photosBySegment[p.segment_id] = photosBySegment[p.segment_id] || [];
@@ -140,7 +140,9 @@
       totalDistance: Number(journeyRow.total_distance) || 0,
       totalElevation: Number(journeyRow.total_elevation) || 0,
       coverUrl: journeyRow.cover_url || coverUrlFromSegments(segments),
-      coverSvg: routeSvgFromSegments(segments)
+      coverSvg: routeSvgFromSegments(segments),
+      author: authorInfo?.nickname || null,
+      authorAvatar: authorInfo?.avatarUrl || null
     };
   }
 
@@ -170,10 +172,12 @@
       const userId = loggedIn ? await getUserId() : null;
 
       let query = supabaseClient.from('journeys').select('*').eq('id', journeyId);
-      if (loggedIn) {
-        query = query.eq('user_id', userId);
-      } else {
+      if (!loggedIn) {
         query = query.eq('is_public', true).eq('status', 'completed');
+      }
+      // For edit mode, restrict to the current user's own journey
+      if (loggedIn && editIdx >= 0) {
+        query = query.eq('user_id', userId);
       }
       const { data: journeyRow, error: jErr } = await query.maybeSingle();
       if (jErr) throw jErr;
@@ -248,7 +252,21 @@
         }
       }
 
-      return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows, editIdx, photoLimit);
+      let authorInfo = null;
+      if (journeyRow?.user_id) {
+        const { data: profileRow, error: profileErr } = await supabaseClient
+          .from('profiles')
+          .select('nickname, avatar_url')
+          .eq('id', journeyRow.user_id)
+          .maybeSingle();
+        if (profileErr) {
+          console.error('[fetchJourneyWithData] author profile fetch error:', profileErr);
+        } else if (profileRow) {
+          authorInfo = { nickname: profileRow.nickname, avatarUrl: profileRow.avatar_url };
+        }
+      }
+
+      return buildJourney(journeyRow, segmentRows || [], photoRows, gpxRows, editIdx, photoLimit, authorInfo);
     } catch (err) {
       console.error('[fetchJourneyWithData] fatal error:', err);
       throw err;
@@ -730,6 +748,123 @@
     return { id: journeyId, status: journeyStatus };
   }
 
+  // ----- Journey reviews -----
+
+  async function fetchProfilesForReviews(reviews) {
+    const userIds = [...new Set((reviews || []).map(r => r.user_id).filter(Boolean))];
+    if (userIds.length === 0) return {};
+
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('id, nickname, avatar_url')
+      .in('id', userIds);
+
+    if (error) {
+      console.error('[journeyService] fetchProfilesForReviews error:', error);
+      return {};
+    }
+
+    const map = {};
+    (data || []).forEach(p => {
+      map[p.id] = { nickname: p.nickname, avatarUrl: p.avatar_url };
+    });
+    return map;
+  }
+
+  function mergeReviewProfile(row, profileMap) {
+    const profile = profileMap?.[row.user_id];
+    return {
+      id: row.id,
+      journeyId: row.journey_id,
+      userId: row.user_id,
+      content: row.content,
+      createdAt: row.created_at,
+      nickname: profile?.nickname || '骑行者',
+      avatarUrl: profile?.avatarUrl || null
+    };
+  }
+
+  async function listJourneyReviews(journeyId, { limit = 20, offset = 0 } = {}) {
+    const { data, error } = await supabaseClient
+      .from('journey_reviews')
+      .select('id, journey_id, user_id, content, created_at')
+      .eq('journey_id', journeyId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      console.error('[journeyService] listJourneyReviews error:', error);
+      throw error;
+    }
+
+    const profileMap = await fetchProfilesForReviews(data);
+    return (data || []).map(row => mergeReviewProfile(row, profileMap));
+  }
+
+  async function addJourneyReview(journeyId, content) {
+    if (!(await isLoggedIn())) throw new Error('请先登录');
+    const userId = await getUserId();
+    const trimmed = (content || '').trim();
+    if (!trimmed) throw new Error('评论内容不能为空');
+    if (trimmed.length > 100) throw new Error('评论最多 100 字');
+
+    const { data, error } = await supabaseClient
+      .from('journey_reviews')
+      .insert({ journey_id: journeyId, user_id: userId, content: trimmed })
+      .select('id, journey_id, user_id, content, created_at')
+      .single();
+
+    if (error) {
+      console.error('[journeyService] addJourneyReview error:', error);
+      throw error;
+    }
+
+    const profileMap = await fetchProfilesForReviews([data]);
+    const review = mergeReviewProfile(data, profileMap);
+
+    // Prefer the current session's user_metadata for the author's own review
+    // so it displays immediately with the latest nickname/avatar.
+    const currentUser = await ensureUser();
+    if (currentUser) {
+      const meta = currentUser.user_metadata || {};
+      if (meta.nickname) review.nickname = meta.nickname;
+      if (meta.avatar) review.avatarUrl = meta.avatar;
+    }
+    return review;
+  }
+
+  async function deleteJourneyReview(reviewId) {
+    if (!(await isLoggedIn())) throw new Error('请先登录');
+    const { error } = await supabaseClient
+      .from('journey_reviews')
+      .delete()
+      .eq('id', reviewId);
+
+    if (error) {
+      console.error('[journeyService] deleteJourneyReview error:', error);
+      throw error;
+    }
+  }
+
+  async function getJourneyReviewCounts(journeyIds) {
+    if (!journeyIds || journeyIds.length === 0) return {};
+    const { data, error } = await supabaseClient
+      .from('journey_reviews')
+      .select('journey_id')
+      .in('journey_id', journeyIds);
+
+    if (error) {
+      console.error('[journeyService] getJourneyReviewCounts error:', error);
+      return {};
+    }
+
+    const counts = {};
+    (data || []).forEach(row => {
+      counts[row.journey_id] = (counts[row.journey_id] || 0) + 1;
+    });
+    return counts;
+  }
+
   async function migrateLocalStorage() {
     if (!(await isLoggedIn())) return;
     if (localStorage.getItem(MIGRATION_KEY) === '1') return;
@@ -838,6 +973,10 @@
     deleteSegment,
     endJourney,
     saveSegment,
-    migrateLocalStorage
+    migrateLocalStorage,
+    listJourneyReviews,
+    addJourneyReview,
+    deleteJourneyReview,
+    getJourneyReviewCounts
   };
 })();
