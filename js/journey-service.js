@@ -167,6 +167,32 @@
     return allRows;
   }
 
+  async function fetchGpxPointsForSegments(segmentIds) {
+    if (!segmentIds?.length) return [];
+    if (segmentIds.length === 1) {
+      return fetchRowsForSegment('gpx_points', segmentIds[0], 'point_index');
+    }
+
+    const allRows = [];
+    const batchSize = 1000;
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabaseClient
+        .from('gpx_points')
+        .select('*')
+        .in('segment_id', segmentIds)
+        .order('segment_id', { ascending: true })
+        .order('point_index', { ascending: true })
+        .range(from, from + batchSize - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allRows.push(...data);
+      if (data.length < batchSize) break;
+      from += batchSize;
+    }
+    return allRows;
+  }
+
   async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false, editIdx = -1, photoLimit = null } = {}) {
     try {
       const loggedIn = await isLoggedIn();
@@ -243,13 +269,10 @@
           }
         }
         if (includeGpx) {
-          const gpxResults = await Promise.all(targetIds.map(segId =>
-            fetchRowsForSegment('gpx_points', segId, 'point_index').catch(e => {
-              console.error('[fetchJourneyWithData] gpx_points fetch error for segment', segId, e);
-              return [];
-            })
-          ));
-          gpxRows = gpxResults.flat();
+          gpxRows = await fetchGpxPointsForSegments(targetIds).catch(e => {
+            console.error('[fetchJourneyWithData] gpx_points batch fetch error:', e);
+            return [];
+          });
         }
       }
 
