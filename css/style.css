@@ -720,8 +720,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   justify-content: space-around;
   padding: 16px 20px;
   background: var(--surface);
-  margin: 20px 20px 0;
-  border-radius: var(--radius-sm);
+  margin: 0;
+  border-radius: 0;
+  --shadow: 0;
   box-shadow: var(--shadow);
 }
 
