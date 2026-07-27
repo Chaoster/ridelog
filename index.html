@@ -75,16 +75,16 @@
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js?v=16"></script>
-  <script src="js/journey-service.js?v=16"></script>
+  <script src="js/app.js?v=17"></script>
+  <script src="js/journey-service.js?v=17"></script>
   <script>
     function getCoverUrl(j) {
-      if (j.coverUrl) return j.coverUrl;
+      if (j.coverUrl) return getSupabaseThumbnailUrl(j.coverUrl, 600);
       const urls = [];
       (j.segments || []).forEach(s => { if (s.photoUrls) urls.push(...s.photoUrls); });
       if (urls.length === 0) return null;
       const hash = String(j.id).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-      return urls[hash % urls.length];
+      return getSupabaseThumbnailUrl(urls[hash % urls.length], 600);
     }
 
     function getCoverSvg(j) {

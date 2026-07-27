@@ -57,6 +57,22 @@ const storage = {
   },
 };
 
+// 为 Supabase Storage 图片生成缩略图 URL（仅对 Storage 域名生效，不影响外部图片）
+function getSupabaseThumbnailUrl(url, width = 600) {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.includes('supabase.co') || !parsed.pathname.includes('/storage/v1/object/public/')) {
+      return url;
+    }
+    parsed.searchParams.set('width', String(width));
+    parsed.searchParams.set('resize', 'cover');
+    return parsed.href;
+  } catch {
+    return url;
+  }
+}
+
 // Convert a data URL (e.g. canvas.toDataURL) to a Blob for uploading
 async function dataUrlToBlob(dataUrl) {
   const response = await fetch(dataUrl);
