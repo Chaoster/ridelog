@@ -125,20 +125,20 @@
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js?v=14"></script>
-  <script src="js/journey-service.js?v=14"></script>
+  <script src="js/app.js?v=17"></script>
+  <script src="js/journey-service.js?v=17"></script>
   <script>
     const colors = ['#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
 
     const coverMapsToInit = [];
 
     function getCoverUrl(j) {
-      if (j.coverUrl) return j.coverUrl;
+      if (j.coverUrl) return getSupabaseThumbnailUrl(j.coverUrl, 200);
       const urls = [];
       (j.segments || []).forEach(s => { if (s.photoUrls) urls.push(...s.photoUrls); });
       if (urls.length === 0) return null;
       const hash = String(j.id).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-      return urls[hash % urls.length];
+      return getSupabaseThumbnailUrl(urls[hash % urls.length], 200);
     }
 
     function getCoverSvg(j) {
@@ -165,10 +165,9 @@
       let completed = [];
       try {
         if (await window.journeyService.isLoggedIn()) {
-          [ongoing, completed] = await Promise.all([
-            window.journeyService.getJourneys({ status: 'ongoing' }),
-            window.journeyService.getJourneys({ status: 'completed' })
-          ]);
+          const allMine = await window.journeyService.getJourneySummaries({});
+          ongoing = allMine.filter(j => j.status === 'ongoing');
+          completed = allMine.filter(j => j.status === 'completed');
           // 后台迁移旧数据，不阻塞列表显示
           window.journeyService.migrateLocalStorage().catch(err => {
             console.error('[my-records] migrate error:', err);
