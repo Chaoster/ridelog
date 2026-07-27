@@ -111,7 +111,11 @@
       }
     }
 
+    let profileUpserted = false;
+
     async function upsertProfileFromMetadata() {
+      if (profileUpserted) return;
+      profileUpserted = true;
       const user = await (window.getCachedUser ? window.getCachedUser() : window.supabaseClient.auth.getUser().then(({ data }) => data.user));
       if (!user) return;
       const meta = user.user_metadata || {};

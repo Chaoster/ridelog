@@ -15,8 +15,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="js/supabase.js"></script>
-  <script src="js/supabase-config.js?v=15"></script>
-  <script src="js/login-modal.js?v=15"></script>
+  <script src="js/supabase-config.js?v=16"></script>
+  <script src="js/login-modal.js?v=16"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js');
@@ -75,8 +75,8 @@
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js?v=15"></script>
-  <script src="js/journey-service.js?v=15"></script>
+  <script src="js/app.js?v=16"></script>
+  <script src="js/journey-service.js?v=16"></script>
   <script>
     function getCoverUrl(j) {
       if (j.coverUrl) return j.coverUrl;
@@ -118,10 +118,9 @@
 
       try {
         if (await window.journeyService.isLoggedIn()) {
-          [ongoing, completed] = await Promise.all([
-            window.journeyService.getJourneySummaries({ status: 'ongoing' }),
-            window.journeyService.getJourneySummaries({ status: 'completed' })
-          ]);
+          const allMine = await window.journeyService.getJourneySummaries({});
+          ongoing = allMine.filter(j => j.status === 'ongoing');
+          completed = allMine.filter(j => j.status === 'completed');
         } else {
           ongoing = storage.get('ongoingJourneys') || [];
           completed = storage.get('completedJourneys') || [];
