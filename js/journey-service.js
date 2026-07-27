@@ -866,16 +866,16 @@
 
     await updateJourneyTotals(journeyId);
 
-    // Generate static route snapshot with Tianditu basemap
-    if (segment.gpxPoints?.length && segmentId) {
-      try {
-        await supabaseClient.functions.invoke('generate-route-snapshot', {
-          body: { segmentId }
-        });
-      } catch (snapshotErr) {
-        console.error('[saveSegment] snapshot generation error:', snapshotErr);
-      }
-    }
+    // Static route snapshot generation is disabled (was using Tianditu staticimage API)
+    // if (segment.gpxPoints?.length && segmentId) {
+    //   try {
+    //     await supabaseClient.functions.invoke('generate-route-snapshot', {
+    //       body: { segmentId }
+    //     });
+    //   } catch (snapshotErr) {
+    //     console.error('[saveSegment] snapshot generation error:', snapshotErr);
+    //   }
+    // }
 
     return { id: journeyId, status: journeyStatus };
   }
