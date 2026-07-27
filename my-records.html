@@ -329,15 +329,9 @@
           zoomControl: false,
           attributionControl: false
         });
-        L.tileLayer('https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=8c92a6692c87ceaf9f6b1f945a50f9dc', {
-          subdomains: '01234567',
-          maxZoom: 18
-        }).addTo(map);
-        L.tileLayer('https://t{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=8c92a6692c87ceaf9f6b1f945a50f9dc', {
-          subdomains: '01234567',
-          maxZoom: 18
-        }).addTo(map);
-
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
         // Force container size and re-render
         const container = el.querySelector('.leaflet-container');
         if (container) {
