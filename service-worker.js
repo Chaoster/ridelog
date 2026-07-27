@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ridelog-pwa-v36';
+const CACHE_NAME = 'ridelog-pwa-v37';
 
 const PRECACHE_ASSETS = [
   '/index',
@@ -16,15 +16,17 @@ const PRECACHE_ASSETS = [
   '/js/login-modal.js',
   '/js/app.js',
   '/js/journey-service.js',
+  '/vendor/leaflet/leaflet.css',
+  '/vendor/leaflet/leaflet.js',
+  '/vendor/leaflet/images/marker-icon.png',
+  '/vendor/leaflet/images/marker-icon-2x.png',
+  '/vendor/leaflet/images/marker-shadow.png',
   '/images/icon.png',
   '/images/favicon.png',
   '/images/logo.png'
 ];
 
-const EXTERNAL_ASSETS = [
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-];
+const EXTERNAL_ASSETS = [];
 
 function isSameOrigin(request) {
   try {
