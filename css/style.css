@@ -417,6 +417,27 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   transform: scale(0.98);
 }
 
+.photo-add.loading {
+  pointer-events: none;
+  color: transparent;
+  position: relative;
+}
+
+.photo-add.loading::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: loading-spin 1s linear infinite;
+}
+
+@keyframes loading-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Timeline */
 .timeline {
   position: relative;

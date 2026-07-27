@@ -212,7 +212,7 @@
 
   <!-- Action Buttons -->
   <div class="action-row" style="margin:24px 20px 0;">
-    <button class="btn btn-secondary" onclick="location.href = (journeyId || journey?.id) ? `ongoing?id=${journeyId || journey?.id}` : 'my-records'">放弃</button>
+    <button class="btn btn-secondary" onclick="clearDraft(); location.href = (journeyId || journey?.id) ? `ongoing?id=${journeyId || journey?.id}` : 'my-records'">放弃</button>
     <button class="btn btn-primary" onclick="saveSegment()">保存本日</button>
   </div>
 
@@ -230,11 +230,15 @@
     document.getElementById('day-number').textContent = dayNum;
     document.getElementById('journey-name').textContent = journeyName;
 
-    // Init variables and map first (before edit mode prefill)
-    const map = L.map('map').setView([36.95, 100.90], 10);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
+    // Init variables first (map is lazy-created when route section becomes visible)
+    let map = null;
+    function initMap() {
+      if (map) return;
+      map = L.map('map').setView([36.95, 100.90], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+    }
     let photos = [];
     let gpxPoints = [];
     let rawGpxPoints = [];
@@ -251,6 +255,79 @@
     let currentElevLoss = 0;
     let currentDistance = 0;
     let currentDurationHours = 0;
+
+    // Draft autosave: survive Strava OAuth redirect and unexpected reloads
+    const DRAFT_KEY = 'ridelogDailySegmentDraft';
+    function saveDraft() {
+      try {
+        const draft = {
+          journeyId,
+          dayNum,
+          editIdx: isEdit ? editIdx : -1,
+          date: document.getElementById('date-input').value || '',
+          note: document.getElementById('note-input').value || '',
+          photos: photos.map(p => ({ url: p.url, lat: p.lat, lng: p.lng, name: p.name })),
+          timestamp: Date.now()
+        };
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      } catch (e) {
+        console.error('[daily-segment] save draft error:', e);
+      }
+    }
+    function shouldRestoreDraft() {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (!raw) return false;
+      try {
+        const draft = JSON.parse(raw);
+        if (draft.journeyId !== journeyId || String(draft.dayNum) !== String(dayNum)) return false;
+        if (isEdit && draft.editIdx !== editIdx) return false;
+        // Always restore fresh drafts (last 5 minutes); in edit mode also restore
+        // when explicitly returning from Strava OAuth.
+        const isRecent = draft.timestamp && (Date.now() - draft.timestamp) < 5 * 60 * 1000;
+        if (isRecent) return true;
+        if (isEdit && urlParams.get('strava') === 'connected') return true;
+        return false;
+      } catch (e) {
+        return false;
+      }
+    }
+    function tryRestoreDraft() {
+      if (!shouldRestoreDraft()) return;
+      try {
+        const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY));
+        if (draft.date) document.getElementById('date-input').value = draft.date;
+        if (draft.note != null) document.getElementById('note-input').value = draft.note;
+        photos = (draft.photos || []).map(p => ({ url: p.url, lat: p.lat || 0, lng: p.lng || 0, name: p.name }));
+        renderPhotoGrid();
+        console.log('[daily-segment] restored draft, photos:', photos.length);
+      } catch (e) {
+        console.error('[daily-segment] restore draft error:', e);
+      }
+    }
+    function clearDraft() {
+      try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    }
+    function renderPhotoItem(photo, index) {
+      const div = document.createElement('div');
+      div.className = 'photo-item';
+      div.dataset.idx = index;
+      div.style.position = 'relative';
+      div.innerHTML = `
+        <img src="${photo.url}" data-fullscreen="${photo.url}">
+        <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;" onclick="removePhoto(this)">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+      `;
+      return div;
+    }
+    function renderPhotoGrid() {
+      const grid = document.getElementById('photo-grid');
+      const addBtn = grid.querySelector('.photo-add');
+      grid.querySelectorAll('.photo-item').forEach(el => el.remove());
+      photos.forEach((p, i) => {
+        grid.insertBefore(renderPhotoItem(p, i), addBtn);
+      });
+    }
 
     // Load journey data
     let journey = null;
@@ -312,6 +389,7 @@
       const redirectUri = `${location.origin}/strava-callback`;
       const scope = 'activity:read_all';
       sessionStorage.setItem('stravaCallbackReturnUrl', location.href);
+      saveDraft();
 
       const authUrl = `https://www.strava.com/oauth/authorize?` +
         `client_id=${STRAVA_CLIENT_ID}&` +
@@ -660,8 +738,6 @@
         currentDurationHours = 0;
       }
 
-      drawRouteOnMap();
-
       document.getElementById('gpx-upload-wrap').style.display = 'none';
       document.getElementById('gpx-file-name').textContent = 'Strava 导入';
       document.getElementById('gpx-preview').innerHTML = '';
@@ -670,10 +746,9 @@
       document.getElementById('elevation-section').style.display = 'block';
       document.getElementById('stats-section').style.display = 'block';
 
-      setTimeout(() => {
-        map.invalidateSize();
-        redistributePhotos();
-      }, 50);
+      initMap();
+      drawRouteOnMap();
+      redistributePhotos();
 
       drawElevationChart(rawGpxPoints, dists);
       document.getElementById('elevation-chart').style.display = 'block';
@@ -700,7 +775,8 @@
 
       // If redirected back from Strava OAuth, open activity picker
       if (urlParams.get('strava') === 'connected') {
-        loadJourney();
+        await loadJourney();
+        tryRestoreDraft();
         setTimeout(() => {
           openStravaModal();
           loadStravaActivities(1);
@@ -708,8 +784,12 @@
         return;
       }
 
-      loadJourney();
+      await loadJourney();
+      tryRestoreDraft();
     }
+
+    document.getElementById('note-input').addEventListener('input', saveDraft);
+    document.getElementById('date-input').addEventListener('input', saveDraft);
 
     async function loadJourney() {
       if (!journeyId) {
@@ -793,7 +873,9 @@
           div.style.position = 'relative';
           div.innerHTML = `
             <img src="${p.url}" data-fullscreen="${p.url}">
-            <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:white;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;z-index:2;" onclick="removePhoto(this)">×</div>
+            <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;" onclick="removePhoto(this)">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
           `;
           grid.insertBefore(div, addBtn);
         });
@@ -824,8 +906,6 @@
           totalDist += haversine(rawGpxPoints[i - 1].lat, rawGpxPoints[i - 1].lon, rawGpxPoints[i].lat, rawGpxPoints[i].lon);
           gpxDists.push(totalDist);
         }
-
-        drawRouteOnMap();
 
         // Show route preview and hide upload component (edit mode shows no file name)
         document.getElementById('gpx-upload-wrap').style.display = 'none';
@@ -862,10 +942,11 @@
           missingEl.style.display = 'none';
         }
 
-        setTimeout(() => { map.invalidateSize(); redistributePhotos(); }, 100);
+        initMap();
+        drawRouteOnMap();
+        redistributePhotos();
       }
 
-      redistributePhotos();
       }
 
       document.getElementById('loading-overlay').style.display = 'none';
@@ -970,11 +1051,13 @@
     }
 
     function clearPhotoMarkers() {
+      if (!map) return;
       photoMarkers.forEach(m => map.removeLayer(m));
       photoMarkers = [];
     }
 
     function redistributePhotos() {
+      if (!map) return;
       clearPhotoMarkers();
 
       // Always fit map to route when one exists (even without photos)
@@ -1069,7 +1152,7 @@
       }
       drawRouteOnMap();
       redistributePhotos();
-      setTimeout(() => map.invalidateSize(), 100);
+      setTimeout(() => { if (map) map.invalidateSize(); }, 100);
     }
 
     function removePhoto(btn) {
@@ -1079,51 +1162,50 @@
       photos.splice(idx, 1);
       item.remove();
       document.querySelectorAll('.photo-item').forEach((el, i) => { el.dataset.idx = i; });
+      saveDraft();
       redistributePhotos();
     }
 
     async function handlePhotos(e) {
       const files = Array.from(e.target.files);
       const grid = document.getElementById('photo-grid');
+      const addBtn = grid.querySelector('.photo-add');
+      addBtn.classList.add('loading');
 
-      for (const file of files) {
-        // Read GPS first (from original file, before compression)
-        const gps = await getPhotoGPS(file);
-        console.log('[handlePhotos] GPS for', file.name, ':', gps);
+      try {
+        for (const file of files) {
+          // Read GPS first (from original file, before compression)
+          const gps = await getPhotoGPS(file);
+          console.log('[handlePhotos] GPS for', file.name, ':', gps);
 
-        const dataUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (ev) => resolve(ev.target.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve(ev.target.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
 
-        const compressedUrl = await compressImage(dataUrl, { maxWidth: 1200, maxSizeKB: 80 });
+          const compressedUrl = await compressImage(dataUrl, { maxWidth: 1200, maxSizeKB: 80 });
 
-        let url = compressedUrl;
-        try {
-          const blob = await dataUrlToBlob(compressedUrl);
-          url = await uploadSegmentPhoto(blob);
-        } catch (err) {
-          console.error('上传照片失败，使用本地 base64:', err);
-          alert('照片上传失败，将临时保存在本地。建议检查网络后重新保存本日记录。');
+          let url = compressedUrl;
+          try {
+            const blob = await dataUrlToBlob(compressedUrl);
+            url = await uploadSegmentPhoto(blob);
+          } catch (err) {
+            console.error('上传照片失败，使用本地 base64:', err);
+            alert('照片上传失败，将临时保存在本地。建议检查网络后重新保存本日记录。');
+          }
+
+          photos.push({ url, lat: gps.lat || 0, lng: gps.lng || 0, name: file.name });
+          grid.insertBefore(renderPhotoItem(photos[photos.length - 1], photos.length - 1), addBtn);
         }
 
-        photos.push({ url, lat: gps.lat || 0, lng: gps.lng || 0, name: file.name });
-
-        const addBtn = grid.querySelector('.photo-add');
-        const div = document.createElement('div');
-        div.className = 'photo-item';
-        div.dataset.idx = photos.length - 1;
-        div.style.position = 'relative';
-        div.innerHTML = `
-          <img src="${url}" data-fullscreen="${url}">
-          <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.5);color:white;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;z-index:2;" onclick="removePhoto(this)">×</div>
-        `;
-        grid.insertBefore(div, addBtn);
+        saveDraft();
+        redistributePhotos();
+      } finally {
+        addBtn.classList.remove('loading');
+        e.target.value = '';
       }
-
-      redistributePhotos();
     }
 
     // Haversine formula
@@ -1155,6 +1237,7 @@
     }
 
     function drawRouteOnMap() {
+      initMap();
       if (routeLine) map.removeLayer(routeLine);
       if (startMarker) map.removeLayer(startMarker);
       if (endMarker) map.removeLayer(endMarker);
@@ -1182,7 +1265,7 @@
     }
 
     function showHoverMarker(point) {
-      if (!point) return;
+      if (!point || !map) return;
       if (hoverMarker) {
         hoverMarker.setLatLng([point.lat, point.lon]);
       } else {
@@ -1198,7 +1281,7 @@
     }
 
     function hideHoverMarker() {
-      if (hoverMarker) {
+      if (hoverMarker && map) {
         map.removeLayer(hoverMarker);
         hoverMarker = null;
       }
@@ -1395,8 +1478,6 @@
         }
         currentDurationHours = durationHours;
 
-        drawRouteOnMap();
-
         // Hide upload component and show route preview with file name
         document.getElementById('gpx-upload-wrap').style.display = 'none';
         document.getElementById('gpx-file-name').textContent = file.name;
@@ -1406,10 +1487,9 @@
         document.getElementById('elevation-section').style.display = 'block';
         document.getElementById('stats-section').style.display = 'block';
 
-        setTimeout(() => {
-          map.invalidateSize();
-          map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
-        }, 50);
+        initMap();
+        drawRouteOnMap();
+        redistributePhotos();
 
         drawElevationChart(rawPoints, dists);
         document.getElementById('elevation-chart').style.display = 'block';
@@ -1433,15 +1513,15 @@
 
     function removeGPX() {
       if (routeLine) {
-        map.removeLayer(routeLine);
+        if (map) map.removeLayer(routeLine);
         routeLine = null;
       }
       if (startMarker) {
-        map.removeLayer(startMarker);
+        if (map) map.removeLayer(startMarker);
         startMarker = null;
       }
       if (endMarker) {
-        map.removeLayer(endMarker);
+        if (map) map.removeLayer(endMarker);
         endMarker = null;
       }
       hideHoverMarker();
@@ -1514,6 +1594,7 @@
       try {
         const updated = await window.journeyService.saveSegment(journeyId, segmentData, isEdit ? editIdx : -1);
         const isCompleted = updated.status === 'completed';
+        clearDraft();
         location.href = isCompleted ? `journey-detail?id=${journeyId}&from=records` : `ongoing?id=${journeyId}`;
       } catch (err) {
         console.error('[daily-segment] save segment error:', err);
