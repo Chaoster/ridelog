@@ -122,6 +122,8 @@
           gpx: simplifiedGpx.length > 0 || !!seg.route_svg,
           gpxPoints: simplifiedGpx,
           routeSvg: seg.route_svg || '',
+        routeSnapshotUrl: seg.route_snapshot_url || '',
+          routeSnapshotUrl: seg.route_snapshot_url || '',
           distance: Number(seg.distance) || 0,
           elevation: Number(seg.elevation) || 0,
           elevationLoss: Number(seg.elevation_loss) || 0,
@@ -457,7 +459,7 @@
     // 一次性批量查询所有 segment 摘要
     const { data: segmentRows, error: sErr } = await supabaseClient
       .from('segments')
-      .select('id, journey_id, day_index, date, distance, elevation, elevation_loss, duration, route_svg')
+      .select('id, journey_id, day_index, date, distance, elevation, elevation_loss, duration, route_svg, route_snapshot_url')
       .in('journey_id', journeyIds)
       .order('day_index', { ascending: true });
     if (sErr) {
@@ -503,6 +505,7 @@
         gpx: false,
         gpxPoints: [],
         routeSvg: seg.route_svg || '',
+        routeSnapshotUrl: seg.route_snapshot_url || '',
         distance: Number(seg.distance) || 0,
         elevation: Number(seg.elevation) || 0,
         elevationLoss: Number(seg.elevation_loss) || 0,
@@ -862,6 +865,18 @@
     }
 
     await updateJourneyTotals(journeyId);
+
+    // Generate static route snapshot with Tianditu basemap
+    if (segment.gpxPoints?.length && segmentId) {
+      try {
+        await supabaseClient.functions.invoke('generate-route-snapshot', {
+          body: { segmentId }
+        });
+      } catch (snapshotErr) {
+        console.error('[saveSegment] snapshot generation error:', snapshotErr);
+      }
+    }
+
     return { id: journeyId, status: journeyStatus };
   }
 

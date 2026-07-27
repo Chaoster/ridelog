@@ -97,7 +97,10 @@
   <div class="section">
     <div class="section-title">骑行路线</div>
     <div class="map-container" id="map-wrap" style="position:relative;">
-      <div id="map" style="height:350px;"></div>
+      <div id="route-snapshot" style="height:350px;cursor:pointer;display:none;border-radius:var(--radius-sm);overflow:hidden;box-shadow:var(--shadow);">
+        <img id="route-snapshot-img" src="" alt="路线快照" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy">
+      </div>
+      <div id="map" style="height:350px;display:none;"></div>
       <button id="map-fs-btn" style="position:absolute;top:8px;right:8px;z-index:500;padding:6px 12px;border-radius:6px;border:none;background:rgba(0,0,0,0.6);color:white;font-size:13px;cursor:pointer;" onclick="toggleMapFullscreen()">全屏</button>
     </div>
   </div>
@@ -365,8 +368,76 @@
     let hoverMarker = null;
     let map = null;
 
+    window.downloadCombinedGPX = async function downloadCombinedGPX() {
+      if (!(await window.journeyService.isLoggedIn())) {
+        window.requireAuth && window.requireAuth(() => downloadCombinedGPX());
+        return;
+      }
+
+      const segs = journey.segments || [];
+      const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
+      if (!hasGpx) {
+        alert('该旅程没有 GPX 数据');
+        return;
+      }
+
+      let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+      gpx += `<gpx version="1.1" creator="RideLog" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+
+      segs.forEach(seg => {
+        if (seg.gpxPoints && seg.gpxPoints.length > 0) {
+          gpx += `  <trk>\n`;
+          gpx += `    <name>${(journey.title || 'RideLog Journey').replace(/[<>]/g, '')} - Day ${seg.day}</name>\n`;
+          gpx += `    <trkseg>\n`;
+          seg.gpxPoints.forEach(pt => {
+            const lat = pt[0];
+            const lon = pt[1];
+            gpx += `      <trkpt lat="${lat}" lon="${lon}"></trkpt>\n`;
+          });
+          gpx += `    </trkseg>\n`;
+          gpx += `  </trk>\n`;
+        }
+      });
+
+      gpx += `</gpx>`;
+
+      const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(journey.title || 'route').replace(/\s+/g, '_')}.gpx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    window.toggleMapFullscreen = function toggleMapFullscreen() {
+      const wrap = document.getElementById('map-wrap');
+      const btn = document.getElementById('map-fs-btn');
+      const isFs = wrap.classList.contains('map-fullscreen');
+      if (!isFs) {
+        showMapContainer();
+        initInteractiveMap();
+        wrap.classList.add('map-fullscreen');
+        wrap.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;background:#fff;padding:0;margin:0;border-radius:0;';
+        document.getElementById('map').style.height = '100%';
+        btn.textContent = '退出全屏';
+        btn.style.top = '12px';
+        btn.style.right = '12px';
+      } else {
+        wrap.classList.remove('map-fullscreen');
+        wrap.style.cssText = 'position:relative;';
+        document.getElementById('map').style.height = '350px';
+        btn.textContent = '全屏';
+        btn.style.top = '8px';
+        btn.style.right = '8px';
+      }
+      if (map) setTimeout(() => map.invalidateSize(), 100);
+    };
+
     function showHoverMarker(point) {
-      if (!point) return;
+      if (!point || !map) return;
       if (hoverMarker) {
         hoverMarker.setLatLng([point.lat, point.lon]);
       } else {
@@ -458,15 +529,20 @@
     document.getElementById('stat-elev').textContent = totalElev > 0 ? Math.round(totalElev) : '-';
 
     // Init map
-    map = L.map('map');
-    L.tileLayer('https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=8c92a6692c87ceaf9f6b1f945a50f9dc', {
-      subdomains: '01234567',
-      maxZoom: 18
-    }).addTo(map);
-    L.tileLayer('https://t{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=8c92a6692c87ceaf9f6b1f945a50f9dc', {
-      subdomains: '01234567',
-      maxZoom: 18
-    }).addTo(map);
+    function initInteractiveMap() {
+      if (map) {
+        showMapContainer();
+        return;
+      }
+      map = L.map('map');
+      L.tileLayer('https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=8c92a6692c87ceaf9f6b1f945a50f9dc', {
+        subdomains: '01234567',
+        maxZoom: 18
+      }).addTo(map);
+      L.tileLayer('https://t{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=8c92a6692c87ceaf9f6b1f945a50f9dc', {
+        subdomains: '01234567',
+        maxZoom: 18
+      }).addTo(map);
     let allPoints = [];
     let allPhotoMarkers = [];
 
@@ -666,77 +742,53 @@
     } else {
       map.setView([36.95, 100.90], 10);
     }
+    }
 
-    window.downloadCombinedGPX = async function downloadCombinedGPX() {
-      if (!(await window.journeyService.isLoggedIn())) {
-        window.requireAuth && window.requireAuth(() => downloadCombinedGPX());
-        return;
+    function showSnapshotContainer() {
+      const snapshotEl = document.getElementById('route-snapshot');
+      const mapEl = document.getElementById('map');
+      if (snapshotEl) snapshotEl.style.display = 'block';
+      if (mapEl) mapEl.style.display = 'none';
+    }
+
+    function showMapContainer() {
+      const snapshotEl = document.getElementById('route-snapshot');
+      const mapEl = document.getElementById('map');
+      if (snapshotEl) snapshotEl.style.display = 'none';
+      if (mapEl) {
+        mapEl.style.display = 'block';
+        if (map) setTimeout(() => map.invalidateSize(), 0);
       }
+    }
 
-      const segs = journey.segments || [];
-      const hasGpx = segs.some(s => s.gpxPoints && s.gpxPoints.length > 0);
-      if (!hasGpx) {
-        alert('该旅程没有 GPX 数据');
-        return;
+    function hasRouteSnapshot() {
+      return segs.length > 0 && segs.some(s => s.routeSnapshotUrl);
+    }
+
+    function getFirstRouteSnapshotUrl() {
+      for (const s of segs) {
+        if (s.routeSnapshotUrl) return s.routeSnapshotUrl;
       }
-
-      let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-      gpx += `<gpx version="1.1" creator="RideLog" xmlns="http://www.topografix.com/GPX/1/1">\n`;
-
-      segs.forEach(seg => {
-        if (seg.gpxPoints && seg.gpxPoints.length > 0) {
-          gpx += `  <trk>\n`;
-          gpx += `    <name>${(journey.title || 'RideLog Journey').replace(/[<>]/g, '')} - Day ${seg.day}</name>\n`;
-          gpx += `    <trkseg>\n`;
-          seg.gpxPoints.forEach(pt => {
-            const lat = pt[0];
-            const lon = pt[1];
-            gpx += `      <trkpt lat="${lat}" lon="${lon}"></trkpt>\n`;
-          });
-          gpx += `    </trkseg>\n`;
-          gpx += `  </trk>\n`;
-        }
-      });
-
-      gpx += `</gpx>`;
-
-      const blob = new Blob([gpx], { type: 'application/gpx+xml' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(journey.title || 'route').replace(/\s+/g, '_')}.gpx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
+      return '';
+    }
 
     // Show download button if GPX exists, or always for anonymous users so we can prompt login
     if (!loggedIn || segs.some(s => s.gpxPoints && s.gpxPoints.length > 0)) {
       document.getElementById('gpx-download-wrap').style.display = 'block';
     }
 
-    window.toggleMapFullscreen = function toggleMapFullscreen() {
-      const wrap = document.getElementById('map-wrap');
-      const btn = document.getElementById('map-fs-btn');
-      const isFs = wrap.classList.contains('map-fullscreen');
-      if (!isFs) {
-        wrap.classList.add('map-fullscreen');
-        wrap.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;background:#fff;padding:0;margin:0;border-radius:0;';
-        document.getElementById('map').style.height = '100%';
-        btn.textContent = '退出全屏';
-        btn.style.top = '12px';
-        btn.style.right = '12px';
-      } else {
-        wrap.classList.remove('map-fullscreen');
-        wrap.style.cssText = 'position:relative;';
-        document.getElementById('map').style.height = '350px';
-        btn.textContent = '全屏';
-        btn.style.top = '8px';
-        btn.style.right = '8px';
-      }
-      setTimeout(() => map.invalidateSize(), 100);
-    };
+    document.getElementById('route-snapshot').addEventListener('click', () => {
+      showMapContainer();
+      initInteractiveMap();
+    });
+
+    if (hasRouteSnapshot()) {
+      document.getElementById('route-snapshot-img').src = getFirstRouteSnapshotUrl();
+      showSnapshotContainer();
+    } else {
+      showMapContainer();
+      initInteractiveMap();
+    }
 
     // Render journey story
     const storyEl = document.getElementById('journey-story');
