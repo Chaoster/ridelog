@@ -112,13 +112,13 @@
     }
 
     async function upsertProfileFromMetadata() {
-      const { data, error } = await supabaseClient.auth.getUser();
-      if (error || !data.user) return;
-      const meta = data.user.user_metadata || {};
+      const user = await (window.getCachedUser ? window.getCachedUser() : window.supabaseClient.auth.getUser().then(({ data }) => data.user));
+      if (!user) return;
+      const meta = user.user_metadata || {};
       const { error: upsertError } = await supabaseClient
         .from('profiles')
         .upsert({
-          id: data.user.id,
+          id: user.id,
           nickname: meta.nickname || '一只小毛驴',
           avatar_url: meta.avatar || null
         }, { onConflict: 'id' });
@@ -227,8 +227,8 @@
         }
       });
 
-      window.supabaseClient.auth.getUser().then(({ data }) => {
-        window.currentUser = data.user || null;
+      (window.getCachedUser ? window.getCachedUser() : window.supabaseClient.auth.getUser().then(({ data }) => data.user)).then(user => {
+        window.currentUser = user || null;
         syncHeaderAvatar(window.currentUser);
         document.body.dispatchEvent(new CustomEvent('authStateChanged', { detail: window.currentUser }));
         if (window.currentUser) {

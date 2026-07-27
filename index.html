@@ -15,8 +15,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="js/supabase.js"></script>
-  <script src="js/supabase-config.js"></script>
-  <script src="js/login-modal.js"></script>
+  <script src="js/supabase-config.js?v=15"></script>
+  <script src="js/login-modal.js?v=15"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js');
@@ -75,8 +75,8 @@
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js?v=14"></script>
-  <script src="js/journey-service.js?v=14"></script>
+  <script src="js/app.js?v=15"></script>
+  <script src="js/journey-service.js?v=15"></script>
   <script>
     function getCoverUrl(j) {
       if (j.coverUrl) return j.coverUrl;
@@ -119,8 +119,8 @@
       try {
         if (await window.journeyService.isLoggedIn()) {
           [ongoing, completed] = await Promise.all([
-            window.journeyService.getJourneys({ status: 'ongoing' }),
-            window.journeyService.getJourneys({ status: 'completed' })
+            window.journeyService.getJourneySummaries({ status: 'ongoing' }),
+            window.journeyService.getJourneySummaries({ status: 'completed' })
           ]);
         } else {
           ongoing = storage.get('ongoingJourneys') || [];
@@ -258,11 +258,15 @@
     renderFeeds();
   </script>
 
-  <!-- Supabase connection test -->
+  <!-- Supabase connection test (dev only) -->
   <script>
     async function testSupabaseConnection() {
       if (!window.supabaseClient) {
         console.warn('[Supabase] 客户端未初始化，请先配置 js/supabase-config.js');
+        return;
+      }
+      // 只在本地开发环境执行，避免生产首页多一次请求
+      if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
         return;
       }
       try {

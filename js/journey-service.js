@@ -9,6 +9,7 @@
 
   async function ensureUser() {
     if (window.currentUser) return window.currentUser;
+    if (window.getCachedUser) return window.getCachedUser();
     const { data, error } = await supabaseClient.auth.getUser();
     if (error || !data.user) return null;
     window.currentUser = data.user;
@@ -409,6 +410,99 @@
     }
 
     return getLocalJourneys(status);
+  }
+
+  // 首页 feed 专用：只返回旅程摘要（不含 gpx_points、不含完整照片），大幅减少请求数
+  async function getJourneySummaries({ status } = {}) {
+    if (!(await isLoggedIn())) return getLocalJourneys(status);
+
+    const userId = await getUserId();
+    let query = supabaseClient.from('journeys').select('*')
+      .eq('user_id', userId);
+    if (status) query = query.eq('status', status);
+    query = query.order('created_at', { ascending: false });
+
+    const { data: journeyRows, error } = await query;
+    if (error) {
+      console.error('[journeyService] getJourneySummaries error:', error);
+      throw error;
+    }
+    if (!journeyRows || journeyRows.length === 0) return [];
+
+    const journeyIds = journeyRows.map(j => j.id);
+
+    // 一次性批量查询所有 segment 摘要
+    const { data: segmentRows, error: sErr } = await supabaseClient
+      .from('segments')
+      .select('id, journey_id, day_index, date, distance, elevation, elevation_loss, duration, route_svg')
+      .in('journey_id', journeyIds)
+      .order('day_index', { ascending: true });
+    if (sErr) {
+      console.error('[journeyService] getJourneySummaries segments error:', sErr);
+      throw sErr;
+    }
+
+    // 一次性批量查询每个 segment 的第一张照片（用于封面）
+    const segmentIds = (segmentRows || []).map(s => s.id);
+    const photosBySegment = {};
+    if (segmentIds.length > 0) {
+      const { data: photoRows, error: pErr } = await supabaseClient
+        .from('photos')
+        .select('segment_id, url, lat, lng')
+        .in('segment_id', segmentIds)
+        .order('created_at', { ascending: true });
+      if (pErr) {
+        console.error('[journeyService] getJourneySummaries photos error:', pErr);
+      } else {
+        const seen = new Set();
+        (photoRows || []).forEach(p => {
+          if (seen.has(p.segment_id)) return;
+          seen.add(p.segment_id);
+          photosBySegment[p.segment_id] = [{
+            url: p.url,
+            lat: Number(p.lat) || 0,
+            lng: Number(p.lng) || 0
+          }];
+        });
+      }
+    }
+
+    const segmentsByJourney = {};
+    (segmentRows || []).forEach(seg => {
+      segmentsByJourney[seg.journey_id] = segmentsByJourney[seg.journey_id] || [];
+      segmentsByJourney[seg.journey_id].push({
+        day: seg.day_index,
+        date: formatDate(seg.date),
+        note: seg.note || '',
+        photoCount: (photosBySegment[seg.id] || []).length,
+        photos: photosBySegment[seg.id] || [],
+        photoUrls: (photosBySegment[seg.id] || []).map(p => p.url),
+        gpx: false,
+        gpxPoints: [],
+        routeSvg: seg.route_svg || '',
+        distance: Number(seg.distance) || 0,
+        elevation: Number(seg.elevation) || 0,
+        elevationLoss: Number(seg.elevation_loss) || 0,
+        duration: seg.duration || '-'
+      });
+    });
+
+    return journeyRows.map(j => ({
+      id: j.id,
+      title: j.title,
+      status: j.status,
+      userId: j.user_id,
+      createdAt: formatDate(j.created_at),
+      completedAt: formatDate(j.completed_at),
+      isPublic: j.is_public,
+      segments: segmentsByJourney[j.id] || [],
+      totalDistance: Number(j.total_distance) || 0,
+      totalElevation: Number(j.total_elevation) || 0,
+      coverUrl: j.cover_url || null,
+      coverSvg: routeSvgFromSegments(segmentsByJourney[j.id] || []),
+      author: null,
+      authorAvatar: null
+    }));
   }
 
   async function getJourneySummary(id) {
@@ -963,6 +1057,7 @@
   window.journeyService = {
     isLoggedIn,
     getJourneys,
+    getJourneySummaries,
     getJourney,
     getJourneySummary,
     getJourneyMinimal,
