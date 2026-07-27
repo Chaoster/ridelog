@@ -714,10 +714,10 @@
     async function loadJourney() {
       if (!journeyId) {
         try {
-          const ongoing = await window.journeyService.getJourneys({ status: 'ongoing' });
-          if (ongoing && ongoing.length > 0 && ongoing[0].id) {
-            journeyId = ongoing[0].id;
-            history.replaceState(null, '', `${location.pathname}?day=${dayNum}&journeyId=${journeyId}&journey=${encodeURIComponent(ongoing[0].title || '新旅程')}`);
+          const ongoing = await window.journeyService.getOngoingJourneyPreview();
+          if (ongoing && ongoing.id) {
+            journeyId = ongoing.id;
+            history.replaceState(null, '', `${location.pathname}?day=${dayNum}&journeyId=${journeyId}&journey=${encodeURIComponent(ongoing.title || '新旅程')}`);
           }
         } catch (err) {
           console.error('[daily-segment] fallback load ongoing journey error:', err);

@@ -157,9 +157,9 @@
     async function loadJourney() {
       if (!journeyId) {
         try {
-          const ongoing = await window.journeyService.getJourneys({ status: 'ongoing' });
-          if (ongoing && ongoing.length > 0 && ongoing[0].id) {
-            journeyId = ongoing[0].id;
+          const ongoing = await window.journeyService.getOngoingJourneyPreview();
+          if (ongoing && ongoing.id) {
+            journeyId = ongoing.id;
             history.replaceState(null, '', `?id=${journeyId}&from=${fromPage}`);
           }
         } catch (err) {

@@ -195,7 +195,7 @@
     return allRows;
   }
 
-  async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false, editIdx = -1, photoLimit = null } = {}) {
+  async function fetchJourneyWithData(journeyId, { includePhotos = false, includeGpx = false, editIdx = -1, photoLimit = null, includeAuthor = true } = {}) {
     try {
       const loggedIn = await isLoggedIn();
       const userId = loggedIn ? await getUserId() : null;
@@ -279,7 +279,7 @@
       }
 
       let authorInfo = null;
-      if (journeyRow?.user_id) {
+      if (includeAuthor && journeyRow?.user_id) {
         const { data: profileRow, error: profileErr } = await supabaseClient
           .from('profiles')
           .select('nickname, avatar_url')
@@ -533,9 +533,31 @@
 
   async function getJourneySummary(id) {
     if (await isLoggedIn()) {
-      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: false, photoLimit: 7 });
+      return fetchJourneyWithData(id, { includePhotos: true, includeGpx: false, photoLimit: 7, includeAuthor: false });
     }
     return getLocalJourney(id);
+  }
+
+  async function getOngoingJourneyPreview() {
+    if (!(await isLoggedIn())) {
+      const local = getLocalJourneys('ongoing');
+      return local.length > 0 ? { id: local[0].id, title: local[0].title } : null;
+    }
+
+    const { data, error } = await supabaseClient
+      .from('journeys')
+      .select('id, title')
+      .eq('user_id', await getUserId())
+      .eq('status', 'ongoing')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[journeyService] getOngoingJourneyPreview error:', error);
+      throw error;
+    }
+    return data || null;
   }
 
   async function getJourneyForEdit(id, editIdx) {
@@ -1100,6 +1122,7 @@
     getJourneySummary,
     getJourneyMinimal,
     getJourneyForEdit,
+    getOngoingJourneyPreview,
     createJourney,
     updateJourney,
     deleteJourney,
