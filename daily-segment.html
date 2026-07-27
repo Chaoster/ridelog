@@ -217,8 +217,8 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/app.js"></script>
-  <script src="js/journey-service.js"></script>
+  <script src="js/app.js?v=17"></script>
+  <script src="js/journey-service.js?v=17"></script>
   <script>
     const urlParams = new URLSearchParams(location.search);
     const dayNum = urlParams.get('day') || '1';
@@ -933,8 +933,8 @@
     }
 
     async function uploadSegmentPhoto(blob) {
-      const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
-      if (userError || !user) throw new Error('未登录，无法上传照片');
+      const user = await (window.getCachedUser ? window.getCachedUser() : window.supabaseClient.auth.getUser().then(({ data }) => data.user));
+      if (!user) throw new Error('未登录，无法上传照片');
       if (!journeyId) throw new Error('缺少 journeyId');
 
       const fileName = `${user.id}/${journeyId}/${dayNum}/${Date.now()}_${randomSuffix()}.webp`;
@@ -1099,7 +1099,7 @@
           reader.readAsDataURL(file);
         });
 
-        const compressedUrl = await compressImage(dataUrl, { maxWidth: 1200, maxSizeKB: 500 });
+        const compressedUrl = await compressImage(dataUrl, { maxWidth: 1200, maxSizeKB: 80 });
 
         let url = compressedUrl;
         try {
