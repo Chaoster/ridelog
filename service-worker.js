@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ridelog-pwa-v34';
+const CACHE_NAME = 'ridelog-pwa-v35';
 
 const PRECACHE_ASSETS = [
   '/index.html',
