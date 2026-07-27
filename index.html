@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>RideLog - 旅行日志</title>
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
   <link rel="icon" type="image/png" href="images/favicon.png">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="images/icon.png">
@@ -174,7 +174,6 @@
         const totalElev = segs.reduce((s, seg) => s + (parseFloat(seg.elevation) || 0), 0) || (j.totalElevation || 0);
         const totalDays = segs.length || (j.days || 0);
         const isOwnOngoing = ongoing.some(o => o.id === j.id);
-        const isOngoing = j.status === 'ongoing';
 
         const coverUrl = getCoverUrl(j);
         const coverSvg = getCoverSvg(j);
@@ -191,26 +190,23 @@
         return `
           <div class="card" onclick="location.href='${isOwnOngoing ? 'ongoing' : 'journey-detail'}?id=${j.id}&from=index'">
             ${coverHtml}
-            <div class="card-content">
-              <div class="card-title">${j.title}</div>
-              <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">
-                <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${isOngoing ? 'rgba(255,123,61,0.15)' : 'rgba(46,204,113,0.15)'};color:${isOngoing ? 'var(--accent-dark)' : '#27ae60'};">${isOngoing ? '进行中' : '已完成'}</span>
-              </div>
-              <div class="card-meta">
-                <span class="card-meta-item">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            <div style="position:absolute;bottom:0;left:0;right:0;padding:40px 16px 16px;border-radius:0 0 var(--radius) var(--radius);background:linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.4) 60%, transparent 100%);color:white;">
+              <div style="font-size:24px;font-weight:700;margin-bottom:8px;text-shadow:0 1px 3px rgba(0,0,0,0.5);">${j.title}</div>
+              <div style="display:flex;align-items:center;gap:16px;font-size:14px;color:rgba(255,255,255,0.92);">
+                <span style="display:flex;align-items:center;gap:4px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                   ${totalDays} 天
                 </span>
-                <span class="card-meta-item">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                <span style="display:flex;align-items:center;gap:4px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
                   ${totalDist > 0 ? Math.round(totalDist) : '-'} km
                 </span>
-                <span class="card-meta-item">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18L14 10l-5 7-3-4z"/></svg>
+                <span style="display:flex;align-items:center;gap:4px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18L14 10l-5 7-3-4z"/></svg>
                   ${totalElev > 0 ? '↑' + Math.round(totalElev) + 'm' : '-'}
                 </span>
-                <span class="card-meta-item">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                <span style="display:flex;align-items:center;gap:4px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
                   ${reviewCounts[j.id] || 0}
                 </span>
               </div>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>我的记录 - RideLog</title>
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
   <link rel="icon" type="image/png" href="images/favicon.png">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="images/icon.png">
@@ -283,7 +283,8 @@
           }
 
           return `
-          <div class="card" onclick="location.href='journey-detail?id=${j.id}&from=records'" style="margin:12px 20px;">
+          <div class="card" onclick="location.href='journey-detail?id=${j.id}&from=records'" style="margin:12px 20px;position:relative;">
+            <span class="status-badge status-completed" style="position:absolute;top:8px;right:8px;z-index:1;margin-left:0;">已完成</span>
             <div class="card-content" style="padding:12px;">
               <div style="display:flex;gap:12px;">
                 ${coverHtml}

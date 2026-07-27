@@ -714,6 +714,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: var(--primary-dark);
 }
 
+.stat-label {
+  font-size: 14px;
+}
+
 .journey-stats-bar {
   display: flex;
   flex-direction: column;
