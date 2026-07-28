@@ -57,9 +57,12 @@
 
   <!-- Page Header -->
   <div class="page-header">
-    <button class="back-btn" onclick="history.back()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
+    <button class="back-btn" onclick="clearDraft(); history.back()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
     <div class="page-title" id="page-title">每日记录</div>
-    <button id="delete-btn" style="display:none;margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteModal()">删除</button>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+      <button id="delete-btn" style="display:none;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#e74c3c;font-size:13px;cursor:pointer;" onclick="showDeleteModal()">删除</button>
+      <button class="btn-primary" style="padding:6px 16px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;" onclick="saveSegment()">保存</button>
+    </div>
   </div>
 
   <!-- Delete Modal -->
@@ -181,7 +184,6 @@
 
   <!-- Elevation Profile -->
   <div class="section" id="elevation-section" style="display:none;">
-    <div class="section-title">海拔剖面</div>
     <div class="elevation-chart-wrap" id="elevation-chart-wrap">
       <canvas id="elevation-chart"></canvas>
       <div id="elevation-missing" style="display:none;padding:24px 12px;text-align:center;color:var(--text-secondary);font-size:13px;line-height:1.6;">
@@ -194,7 +196,7 @@
   <!-- Today's Stats -->
   <div class="section" id="stats-section" style="display:none;">
     <div class="section-title">今日数据</div>
-    <div class="stats-bar">
+    <div class="stats-bar" style="margin:0 20px;border-radius:16px;box-shadow:var(--shadow);--shadow:0 2px 12px rgba(0,0,0,0.08);">
       <div class="stat-item">
         <div class="stat-value" id="stat-dist">-</div>
         <div class="stat-label">里程(km)</div>
@@ -208,12 +210,6 @@
         <div class="stat-label">用时</div>
       </div>
     </div>
-  </div>
-
-  <!-- Action Buttons -->
-  <div class="action-row" style="margin:24px 20px 0;">
-    <button class="btn btn-secondary" onclick="clearDraft(); location.href = (journeyId || journey?.id) ? `ongoing?id=${journeyId || journey?.id}` : 'my-records'">放弃</button>
-    <button class="btn btn-primary" onclick="saveSegment()">保存本日</button>
   </div>
 
   <script src="/vendor/leaflet/leaflet.js"></script>
@@ -234,7 +230,14 @@
     let map = null;
     function initMap() {
       if (map) return;
-      map = L.map('map').setView([36.95, 100.90], 10);
+      map = L.map('map', {
+        dragging: false,
+        touchZoom: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false
+      }).setView([36.95, 100.90], 10);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap'
       }).addTo(map);
@@ -1127,6 +1130,26 @@
       }
     }
 
+    function enableMapInteraction() {
+      if (!map) return;
+      if (map.dragging) map.dragging.enable();
+      if (map.touchZoom) map.touchZoom.enable();
+      if (map.scrollWheelZoom) map.scrollWheelZoom.enable();
+      if (map.doubleClickZoom) map.doubleClickZoom.enable();
+      if (map.boxZoom) map.boxZoom.enable();
+      if (map.keyboard) map.keyboard.enable();
+    }
+
+    function disableMapInteraction() {
+      if (!map) return;
+      if (map.dragging) map.dragging.disable();
+      if (map.touchZoom) map.touchZoom.disable();
+      if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+      if (map.doubleClickZoom) map.doubleClickZoom.disable();
+      if (map.boxZoom) map.boxZoom.disable();
+      if (map.keyboard) map.keyboard.disable();
+    }
+
     function toggleMapFullscreen() {
       const wrap = document.getElementById('map-wrap');
       const btn = document.getElementById('map-fs-btn');
@@ -1140,6 +1163,7 @@
         btn.style.right = '12px';
         pinSize = 56;
         routeWeight = 8;
+        enableMapInteraction();
       } else {
         wrap.classList.remove('map-fullscreen');
         wrap.style.cssText = 'position:relative;';
@@ -1149,6 +1173,7 @@
         btn.style.right = '8px';
         pinSize = 36;
         routeWeight = 4;
+        disableMapInteraction();
       }
       drawRouteOnMap();
       redistributePhotos();
@@ -1388,7 +1413,7 @@
         ctx.fillText(Math.round(val) + 'km', x, pad.top + chartH + 8);
       }
 
-      // Interaction: hover/touch on chart to highlight map position
+      // Interaction: hover on desktop, long-press on touch to highlight map position
       function handleChartMove(clientX) {
         const rect = canvas.getBoundingClientRect();
         const x = clientX - rect.left;
@@ -1399,13 +1424,65 @@
       }
 
       canvas.onmousemove = (e) => handleChartMove(e.clientX);
+      canvas.onmouseleave = () => hideHoverMarker();
+
+      // Touch: only respond to long-press; ignore short taps
+      let longPressTimer = null;
+      let touchStartX = 0;
+      let touchStartY = 0;
+      let longPressActive = false;
+      const LONG_PRESS_DELAY = 500;
+      const MOVE_THRESHOLD = 12;
+
+      function clearLongPressTimer() {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+
+      canvas.ontouchstart = (e) => {
+        e.preventDefault();
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        longPressActive = false;
+        clearLongPressTimer();
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          longPressActive = true;
+          handleChartMove(touch.clientX);
+        }, LONG_PRESS_DELAY);
+      };
+
       canvas.ontouchmove = (e) => {
         e.preventDefault();
-        if (e.touches.length > 0) handleChartMove(e.touches[0].clientX);
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+        if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
+          clearLongPressTimer();
+        }
+        if (longPressActive) {
+          handleChartMove(touch.clientX);
+        }
       };
-      canvas.onmouseleave = () => hideHoverMarker();
-      canvas.ontouchend = () => hideHoverMarker();
-      canvas.ontouchcancel = () => hideHoverMarker();
+
+      canvas.ontouchend = () => {
+        clearLongPressTimer();
+        longPressActive = false;
+        hideHoverMarker();
+      };
+
+      canvas.ontouchcancel = () => {
+        clearLongPressTimer();
+        longPressActive = false;
+        hideHoverMarker();
+      };
+
+      canvas.oncontextmenu = (e) => e.preventDefault();
     }
 
     function formatElev(gain, loss) {

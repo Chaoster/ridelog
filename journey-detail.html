@@ -311,7 +311,7 @@
         ctx.fillText(Math.round(val) + 'km', x, pad.top + chartH + 8);
       }
 
-      // Interaction: hover/touch on chart to highlight map position
+      // Interaction: hover on desktop, long-press on touch to highlight map position
       function handleChartMove(clientX) {
         const rect = canvas.getBoundingClientRect();
         const x = clientX - rect.left;
@@ -322,17 +322,65 @@
       }
 
       canvas.onmousemove = (e) => handleChartMove(e.clientX);
+      canvas.onmouseleave = () => hideHoverMarker();
+
+      // Touch: only respond to long-press; ignore short taps
+      let longPressTimer = null;
+      let touchStartX = 0;
+      let touchStartY = 0;
+      let longPressActive = false;
+      const LONG_PRESS_DELAY = 500;
+      const MOVE_THRESHOLD = 12;
+
+      function clearLongPressTimer() {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+
       canvas.ontouchstart = (e) => {
         e.preventDefault();
-        if (e.touches.length > 0) handleChartMove(e.touches[0].clientX);
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        longPressActive = false;
+        clearLongPressTimer();
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          longPressActive = true;
+          handleChartMove(touch.clientX);
+        }, LONG_PRESS_DELAY);
       };
+
       canvas.ontouchmove = (e) => {
         e.preventDefault();
-        if (e.touches.length > 0) handleChartMove(e.touches[0].clientX);
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+        if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
+          clearLongPressTimer();
+        }
+        if (longPressActive) {
+          handleChartMove(touch.clientX);
+        }
       };
-      canvas.onmouseleave = () => hideHoverMarker();
-      canvas.ontouchend = () => hideHoverMarker();
-      canvas.ontouchcancel = () => hideHoverMarker();
+
+      canvas.ontouchend = () => {
+        clearLongPressTimer();
+        longPressActive = false;
+        hideHoverMarker();
+      };
+
+      canvas.ontouchcancel = () => {
+        clearLongPressTimer();
+        longPressActive = false;
+        hideHoverMarker();
+      };
+
+      canvas.oncontextmenu = (e) => e.preventDefault();
     }
 
     function collectElevationData(segments) {
@@ -367,6 +415,23 @@
 
     let hoverMarker = null;
     let map = null;
+
+    function showSnapshotContainer() {
+      const snapshotEl = document.getElementById('route-snapshot');
+      const mapEl = document.getElementById('map');
+      if (snapshotEl) snapshotEl.style.display = 'block';
+      if (mapEl) mapEl.style.display = 'none';
+    }
+
+    function showMapContainer() {
+      const snapshotEl = document.getElementById('route-snapshot');
+      const mapEl = document.getElementById('map');
+      if (snapshotEl) snapshotEl.style.display = 'none';
+      if (mapEl) {
+        mapEl.style.display = 'block';
+        if (map) setTimeout(() => map.invalidateSize(), 0);
+      }
+    }
 
     window.downloadCombinedGPX = async function downloadCombinedGPX() {
       if (!(await window.journeyService.isLoggedIn())) {
@@ -410,30 +475,6 @@
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    };
-
-    window.toggleMapFullscreen = function toggleMapFullscreen() {
-      const wrap = document.getElementById('map-wrap');
-      const btn = document.getElementById('map-fs-btn');
-      const isFs = wrap.classList.contains('map-fullscreen');
-      if (!isFs) {
-        showMapContainer();
-        initInteractiveMap();
-        wrap.classList.add('map-fullscreen');
-        wrap.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;background:#fff;padding:0;margin:0;border-radius:0;';
-        document.getElementById('map').style.height = '100%';
-        btn.textContent = '退出全屏';
-        btn.style.top = '12px';
-        btn.style.right = '12px';
-      } else {
-        wrap.classList.remove('map-fullscreen');
-        wrap.style.cssText = 'position:relative;';
-        document.getElementById('map').style.height = '350px';
-        btn.textContent = '全屏';
-        btn.style.top = '8px';
-        btn.style.right = '8px';
-      }
-      if (map) setTimeout(() => map.invalidateSize(), 100);
     };
 
     function showHoverMarker(point) {
@@ -534,7 +575,14 @@
         showMapContainer();
         return;
       }
-      map = L.map('map');
+      map = L.map('map', {
+        dragging: false,
+        touchZoom: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false
+      });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
@@ -739,22 +787,51 @@
     }
     }
 
-    function showSnapshotContainer() {
-      const snapshotEl = document.getElementById('route-snapshot');
-      const mapEl = document.getElementById('map');
-      if (snapshotEl) snapshotEl.style.display = 'block';
-      if (mapEl) mapEl.style.display = 'none';
+    function enableMapInteraction() {
+      if (!map) return;
+      if (map.dragging) map.dragging.enable();
+      if (map.touchZoom) map.touchZoom.enable();
+      if (map.scrollWheelZoom) map.scrollWheelZoom.enable();
+      if (map.doubleClickZoom) map.doubleClickZoom.enable();
+      if (map.boxZoom) map.boxZoom.enable();
+      if (map.keyboard) map.keyboard.enable();
     }
 
-    function showMapContainer() {
-      const snapshotEl = document.getElementById('route-snapshot');
-      const mapEl = document.getElementById('map');
-      if (snapshotEl) snapshotEl.style.display = 'none';
-      if (mapEl) {
-        mapEl.style.display = 'block';
-        if (map) setTimeout(() => map.invalidateSize(), 0);
-      }
+    function disableMapInteraction() {
+      if (!map) return;
+      if (map.dragging) map.dragging.disable();
+      if (map.touchZoom) map.touchZoom.disable();
+      if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+      if (map.doubleClickZoom) map.doubleClickZoom.disable();
+      if (map.boxZoom) map.boxZoom.disable();
+      if (map.keyboard) map.keyboard.disable();
     }
+
+    window.toggleMapFullscreen = function toggleMapFullscreen() {
+      const wrap = document.getElementById('map-wrap');
+      const btn = document.getElementById('map-fs-btn');
+      const isFs = wrap.classList.contains('map-fullscreen');
+      if (!isFs) {
+        showMapContainer();
+        initInteractiveMap();
+        enableMapInteraction();
+        wrap.classList.add('map-fullscreen');
+        wrap.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;background:#fff;padding:0;margin:0;border-radius:0;';
+        document.getElementById('map').style.height = '100%';
+        btn.textContent = '退出全屏';
+        btn.style.top = '12px';
+        btn.style.right = '12px';
+      } else {
+        wrap.classList.remove('map-fullscreen');
+        wrap.style.cssText = 'position:relative;';
+        document.getElementById('map').style.height = '350px';
+        btn.textContent = '全屏';
+        btn.style.top = '8px';
+        btn.style.right = '8px';
+        disableMapInteraction();
+      }
+      if (map) setTimeout(() => map.invalidateSize(), 100);
+    };
 
     function hasRouteSnapshot() {
       return segs.length > 0 && segs.some(s => s.routeSnapshotUrl);
